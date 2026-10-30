@@ -36,13 +36,17 @@ from .lattice import (
     merge_lattice,
 )
 from .primitives import (
+    AllDifferentPropagator,
     ArithmeticPropagator,
     Cell,
+    DynamicScenePropagator,
     ElasticModulatorPropagator,
+    KalmanEstimatorPropagator,
     LagPropagator,
     Propagator,
     PropagatorNetwork,
     RatePropagator,
+    ScenePhase,
     ThresholdPropagator,
 )
 from .tms import Premise, TruthMaintenanceSystem
@@ -70,6 +74,10 @@ __all__ = [
     "LagPropagator",
     "ElasticModulatorPropagator",
     "ThresholdPropagator",
+    "DynamicScenePropagator",
+    "ScenePhase",
+    "KalmanEstimatorPropagator",
+    "AllDifferentPropagator",
     # Kinematics
     "GPSFix",
     "TransitMode",
