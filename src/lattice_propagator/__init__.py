@@ -51,7 +51,7 @@ from .primitives import (
 )
 from .tms import Premise, TruthMaintenanceSystem
 
-__version__ = "0.0.1.dev1"
+__version__ = "0.0.1dev1"
 
 __all__ = [
     # Core Lattice Elements

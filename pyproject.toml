@@ -4,7 +4,7 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "lattice-propagator"
-version = "0.0.1.dev1"
+version = "0.0.1dev1"
 description = "Monotonic constraint networks and sensor fusion over partial-information lattices"
 readme = "README.md"
 requires-python = ">=3.11"
