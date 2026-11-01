@@ -164,7 +164,28 @@ title: Quality Attributes & Architectural Constraints
 
 ---
 
-## 5. Verification Gate & Quality Invariants
+## 5. Home Assistant Core Import Compliance (`REQ-HAC`)
+
+To qualify as a direct third-party dependency imported into Home Assistant Core integrations (as governed by Home Assistant Architecture ADRs and package ingestion standards), `lattice-propagator` must satisfy eight strict integration requirements:
+
+```yaml
+type: requirement_group
+id: REQ-HAC
+title: Home Assistant Core Ingestion & Import Compliance
+```
+
+- **REQ-HAC-1 (Zero Event-Loop Blocking / Pure In-Memory Math):** The library must execute entirely in-memory with zero synchronous I/O, network sockets, or filesystem operations during propagation. Settling an active network must never block Home Assistant's `asyncio` event loop.
+- **REQ-HAC-2 (Zero Runtime Dependencies):** The package must maintain `dependencies = []` in `pyproject.toml`, eliminating transitive dependency hell, version-pinning conflicts, and security CVE surface in Home Assistant Core builds.
+- **REQ-HAC-3 (PEP 561 Type Completeness & `py.typed`):** The package must be fully type-annotated, pass strict `mypy` type checks without `Any` leaks, and ship the `py.typed` marker file to satisfy Home Assistant Core's rigorous CI typing gates.
+- **REQ-HAC-4 (Stateless Module Boundaries & Full Re-entrancy):** The library must maintain zero mutable global or module-level singletons. Multiple Home Assistant integrations or config entries must be able to instantiate isolated `PropagatorNetwork` instances simultaneously without cross-talk.
+- **REQ-HAC-5 (Thread Safety & Immutability):** All lattice values must be immutable data structures, allowing cell values to be safely passed from background worker threads or coordinators to entity states without data races.
+- **REQ-HAC-6 (OSI-Approved License):** The package must be licensed under the MIT License (an OSI-approved permissive license fully compatible with Home Assistant's Apache-2.0 codebase).
+- **REQ-HAC-7 (Standard Packaging & Pure-Python Wheel Distribution):** The package must build via PEP 517/518 (`flit_core`), publishing standard source distributions (`sdist`) and architecture-independent universal wheels (`py3-none-any.whl`) to PyPI.
+- **REQ-HAC-8 (Python Version Alignment):** The package must support Python `>= 3.11`, ensuring full forward compatibility with Home Assistant Core's active Python baseline (Python 3.12, 3.13, and 3.14).
+
+---
+
+## 6. Verification Gate & Quality Invariants
 
 Every code change in `li` is gated by the unified verification command `./scripts/dev.sh check`:
 
