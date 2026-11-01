@@ -79,6 +79,7 @@ nav:
       - N-Queens Constraint Search: examples/n_queens.md
       - Bidirectional Resistor Networks: examples/resistor_network.md
       - Kinematic Reachability Envelopes: examples/kinematics.md
+      - Time-of-Day Circular Intervals: examples/clock_intervals.md
   - API Reference:
       - lattice: api/lattice.md
       - primitives: api/primitives.md
