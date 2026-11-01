@@ -873,8 +873,10 @@ class TrajectorySegment:
     Attributes:
         duration: Duration of this segment in seconds (or time units). Must be ≥ 0.
         bounds: Target bounds (IntervalValue or scalar) reached at the end of this segment.
-        transition: Transition profile ("linear", "step", "smooth" / "cosine", "hold").
+        transition: Transition profile ("linear", "smooth" / "cosine", "sigmoid" / "logistic",
+            "tanh", "exponential" / "exp", "step", "hold").
         name: Optional descriptive label for this segment (e.g. "ramp_up", "soak", "decay").
+        custom_eval: Optional callable f(u) -> float evaluating custom normalized progress for u ∈ [0, 1].
     """
 
     duration: float
