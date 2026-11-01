@@ -64,6 +64,7 @@ plugins:
 nav:
   - Overview: index.md
   - Getting Started: getting_started.md
+  - Requirements & Specification: requirements.md
   - Core Concepts:
       - The Information Semilattice: concepts/lattices.md
       - Reactive Cells & Networks: concepts/networks.md
