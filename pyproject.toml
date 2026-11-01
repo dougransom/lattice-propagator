@@ -37,11 +37,27 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
+[project.scripts]
+lattice-dev = "lattice_propagator.dev_cli:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=5.0.0",
     "ruff>=0.8.0",
+]
+docs = [
+    "mkdocs>=1.6.0",
+    "mkdocs-material>=9.5.0",
+    "mkdocstrings[python]>=0.27.0",
+    "pymdown-extensions>=10.7",
+]
+build = [
+    "flit>=3.9.0",
+    "build>=1.2.0",
+]
+all = [
+    "lattice-propagator[dev,docs,build]",
 ]
 
 [tool.ruff]

@@ -26,3 +26,4 @@ htmlcov/
 .ruff_cache/
 .venv
 venv/
+site/

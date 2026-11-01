@@ -63,5 +63,33 @@ Information within a Cell is structured as a join-semilattice (L, <=, merge), en
 
 ---
 
-## 3. License
+## 3. Development & Documentation
+
+All developer tasks (testing, linting, building docs, packaging) are managed via the unified CLI `lattice-dev` (or the `./scripts/dev.sh` wrapper):
+
+```bash
+# 1. Install editable package with all dev & documentation tools
+uv pip install -e ".[all]"
+
+# 2. Run test suite with coverage
+lattice-dev test --cov
+
+# 3. Serve interactive documentation locally (hot-reload at http://127.0.0.1:8000)
+lattice-dev docs-serve
+
+# 4. Build static HTML documentation
+lattice-dev docs-build
+
+# 5. Build distribution packages (.whl, .tar.gz)
+lattice-dev build
+
+# 6. Run full verification pipeline (lint + test + docs-build)
+lattice-dev check
+```
+
+For detailed contributor guides, see [DEVELOPMENT.md](DEVELOPMENT.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
+
+## 4. License
 MIT License. Copyright (c) Doug Ransom.

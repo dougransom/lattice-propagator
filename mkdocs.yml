@@ -1,0 +1,82 @@
+site_name: Lattice Propagator
+site_description: Monotonic constraint networks and sensor fusion over partial-information lattices
+site_author: Doug Ransom
+repo_name: lattice-propagator
+repo_url: https://github.com/dougransom/lattice-propagator
+
+theme:
+  name: material
+  language: en
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - navigation.indexes
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.arithmatex:
+      generic: true
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: google
+            show_root_heading: true
+            show_source: true
+            merge_init_into_class: true
+            separate_signature: true
+            show_signature_annotations: true
+
+nav:
+  - Overview: index.md
+  - Getting Started: getting_started.md
+  - Core Concepts:
+      - The Information Semilattice: concepts/lattices.md
+      - Reactive Cells & Networks: concepts/networks.md
+      - Truth Maintenance & Backtracking: concepts/tms.md
+  - Examples & Tutorials:
+      - Bidirectional Arithmetic: examples/arithmetic.md
+      - Sensor Fusion & Kalman Filters: examples/sensor_fusion.md
+      - Interval Envelopes & Bounds: examples/intervals.md
+      - Sudoku & Search Choice Engine: examples/sudoku.md
+  - API Reference:
+      - lattice: api/lattice.md
+      - primitives: api/primitives.md
+      - tms: api/tms.md
+  - Development & Contributing:
+      - Developer Guide: development.md
+      - Contributing: contributing.md
