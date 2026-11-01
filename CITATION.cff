@@ -1,0 +1,33 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "lattice-propagator"
+version: "0.0.1dev1"
+date-released: "2026-11-01"
+abstract: "Monotonic constraint networks and sensor fusion over partial-information lattices"
+repository-code: "https://github.com/dougransom/lattice-propagator"
+license: "MIT"
+authors:
+  - family-names: "Ransom"
+    given-names: "Doug"
+    email: "doug@ransom.vip"
+keywords:
+  - "propagators"
+  - "lattice"
+  - "partial-information"
+  - "constraints"
+  - "sensor-fusion"
+  - "home-assistant"
+  - "sussman"
+  - "radul"
+references:
+  - type: report
+    authors:
+      - family-names: "Radul"
+        given-names: "Alexey"
+      - family-names: "Sussman"
+        given-names: "Gerald Jay"
+    title: "The Art of the Propagator"
+    institution:
+      name: "MIT CSAIL"
+    year: 2009
+    url: "https://dspace.mit.edu/handle/1721.1/44215"

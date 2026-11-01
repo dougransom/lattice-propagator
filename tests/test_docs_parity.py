@@ -78,3 +78,16 @@ def test_no_orphan_markdown_files_in_docs() -> None:
         f"Found orphan markdown files in docs/ that are not listed in mkdocs.yml nav: {sorted(orphans)}. "
         "Register them in mkdocs.yml to ensure they are built and rendered."
     )
+
+
+def test_metadata_files_are_synchronized_with_pyproject() -> None:
+    """Verify that codemeta.json and CITATION.cff exist and match pyproject.toml version."""
+    import argparse
+
+    from lattice_propagator.dev_cli import cmd_metadata
+
+    res = cmd_metadata(argparse.Namespace(check=True))
+    assert res == 0, (
+        "codemeta.json and CITATION.cff are out of sync with pyproject.toml. "
+        "Run 'lattice-dev metadata' or './scripts/dev.sh build'."
+    )

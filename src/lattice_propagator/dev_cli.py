@@ -7,8 +7,11 @@ documentation serving/building, and package artifact generation.
 from __future__ import annotations
 
 import argparse
+import datetime
+import json
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -80,9 +83,162 @@ def cmd_docs_build(args: argparse.Namespace) -> int:
     return _run_cmd(cmd)
 
 
+def generate_metadata_contents(repo_root: Path = REPO_ROOT) -> tuple[str, str]:
+    """Extract metadata from pyproject.toml and produce (codemeta.json, CITATION.cff)."""
+    pyproject_file = repo_root / "pyproject.toml"
+    with open(pyproject_file, "rb") as f:
+        pyproject = tomllib.load(f)
+
+    project = pyproject.get("project", {})
+    name = project.get("name", "lattice-propagator")
+    version = project.get("version", "0.0.1")
+    description = project.get("description", "")
+    license_str = project.get("license", {}).get("text", "MIT")
+    keywords = project.get("keywords", [])
+    raw_authors = project.get("authors", [])
+
+    authors_cff: list[dict[str, str]] = []
+    authors_codemeta: list[dict[str, str]] = []
+    for a in raw_authors:
+        author_name = a.get("name", "")
+        email = a.get("email", "")
+        parts = author_name.strip().rsplit(" ", 1)
+        given = parts[0] if parts else ""
+        family = parts[1] if len(parts) > 1 else ""
+
+        cff_entry: dict[str, str] = {}
+        if family:
+            cff_entry["family-names"] = family
+        if given:
+            cff_entry["given-names"] = given
+        if email:
+            cff_entry["email"] = email
+        authors_cff.append(cff_entry)
+
+        codemeta_entry: dict[str, str] = {
+            "@type": "Person",
+            "givenName": given,
+            "familyName": family,
+        }
+        if email:
+            codemeta_entry["email"] = email
+        authors_codemeta.append(codemeta_entry)
+
+    # 1. codemeta.json
+    codemeta_dict = {
+        "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
+        "@type": "SoftwareSourceCode",
+        "identifier": name,
+        "name": name,
+        "version": version,
+        "description": description,
+        "license": f"https://spdx.org/licenses/{license_str}",
+        "codeRepository": "https://github.com/dougransom/lattice-propagator",
+        "programmingLanguage": "Python",
+        "runtimePlatform": "Python 3.11+",
+        "author": authors_codemeta,
+        "keywords": keywords,
+        "citation": [
+            "https://dspace.mit.edu/handle/1721.1/44215",
+            "https://dspace.mit.edu/handle/1721.1/54635",
+        ],
+    }
+    codemeta_content = json.dumps(codemeta_dict, indent=2) + "\n"
+
+    # 2. CITATION.cff
+    today = datetime.date.today().isoformat()
+    lines = [
+        "cff-version: 1.2.0",
+        'message: "If you use this software, please cite it as below."',
+        f'title: "{name}"',
+        f'version: "{version}"',
+        f'date-released: "{today}"',
+        f'abstract: "{description}"',
+        'repository-code: "https://github.com/dougransom/lattice-propagator"',
+        f'license: "{license_str}"',
+        "authors:",
+    ]
+    for a in authors_cff:
+        lines.append(f'  - family-names: "{a.get("family-names", "")}"')
+        lines.append(f'    given-names: "{a.get("given-names", "")}"')
+        if "email" in a:
+            lines.append(f'    email: "{a["email"]}"')
+    if keywords:
+        lines.append("keywords:")
+        for kw in keywords:
+            lines.append(f'  - "{kw}"')
+    lines.extend(
+        [
+            "references:",
+            "  - type: report",
+            "    authors:",
+            '      - family-names: "Radul"',
+            '        given-names: "Alexey"',
+            '      - family-names: "Sussman"',
+            '        given-names: "Gerald Jay"',
+            '    title: "The Art of the Propagator"',
+            "    institution:",
+            '      name: "MIT CSAIL"',
+            "    year: 2009",
+            '    url: "https://dspace.mit.edu/handle/1721.1/44215"',
+        ]
+    )
+    citation_content = "\n".join(lines) + "\n"
+
+    return codemeta_content, citation_content
+
+
+def cmd_metadata(args: argparse.Namespace) -> int:
+    """Generate or verify codemeta.json and CITATION.cff from pyproject.toml."""
+    codemeta_path = REPO_ROOT / "codemeta.json"
+    citation_path = REPO_ROOT / "CITATION.cff"
+    codemeta_content, citation_content = generate_metadata_contents(REPO_ROOT)
+
+    if getattr(args, "check", False):
+        if not codemeta_path.is_file() or not citation_path.is_file():
+            print(
+                "\033[1;31mError:\033[0m codemeta.json or CITATION.cff is missing. Run 'lattice-dev metadata' to generate.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # Check version match
+        existing_cm = json.loads(codemeta_path.read_text(encoding="utf-8"))
+        expected_cm = json.loads(codemeta_content)
+        if existing_cm.get("version") != expected_cm.get("version"):
+            print(
+                f"\033[1;31mError:\033[0m codemeta.json version ({existing_cm.get('version')}) "
+                f"does not match pyproject.toml ({expected_cm.get('version')}). Run 'lattice-dev metadata'.",
+                file=sys.stderr,
+            )
+            return 1
+
+        existing_cff = citation_path.read_text(encoding="utf-8")
+        if f'version: "{expected_cm.get("version")}"' not in existing_cff:
+            print(
+                "\033[1;31mError:\033[0m CITATION.cff version does not match pyproject.toml. Run 'lattice-dev metadata'.",
+                file=sys.stderr,
+            )
+            return 1
+        print(
+            "\033[1;32m✔ codemeta.json and CITATION.cff are synchronized with pyproject.toml.\033[0m"
+        )
+        return 0
+
+    # Write files
+    codemeta_path.write_text(codemeta_content, encoding="utf-8")
+    citation_path.write_text(citation_content, encoding="utf-8")
+    print("\033[1;32m✔ Generated codemeta.json and CITATION.cff from pyproject.toml.\033[0m")
+    return 0
+
+
 def cmd_build(args: argparse.Namespace) -> int:
-    """Build wheel and sdist distribution packages."""
-    # Prefer flit build or build module
+    """Build wheel and sdist distribution packages after synchronizing metadata."""
+    # Synchronize codemeta.json and CITATION.cff
+    meta_args = argparse.Namespace(check=False)
+    if cmd_metadata(meta_args) != 0:
+        return 1
+
     dist_dir = REPO_ROOT / "dist"
     dist_dir.mkdir(exist_ok=True)
     cmd = [sys.executable, "-m", "flit", "build"]
@@ -90,13 +246,20 @@ def cmd_build(args: argparse.Namespace) -> int:
 
 
 def cmd_check(args: argparse.Namespace) -> int:
-    """Run all verification checks (lint, test, docs-build)."""
-    print("\033[1;32m[1/3] Checking linting and formatting...\033[0m")
+    """Run all verification checks (metadata, lint, test, docs-build)."""
+    print(
+        "\033[1;32m[1/4] Checking metadata synchronization (codemeta.json & CITATION.cff)...\033[0m"
+    )
+    meta_args = argparse.Namespace(check=True)
+    if cmd_metadata(meta_args) != 0:
+        return 1
+
+    print("\n\033[1;32m[2/4] Checking linting and formatting...\033[0m")
     args.fix = False
     if cmd_lint(args) != 0:
         return 1
 
-    print("\n\033[1;32m[2/3] Running tests with coverage...\033[0m")
+    print("\n\033[1;32m[3/4] Running tests with coverage...\033[0m")
     args.coverage = True
     args.verbose = False
     args.k = None
@@ -104,7 +267,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     if cmd_test(args) != 0:
         return 1
 
-    print("\n\033[1;32m[3/3] Building documentation (--strict)...\033[0m")
+    print("\n\033[1;32m[4/4] Building documentation (--strict)...\033[0m")
     args.strict = True
     if cmd_docs_build(args) != 0:
         return 1
@@ -159,6 +322,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_dbuild.add_argument("--no-strict", dest="strict", action="store_false")
     p_dbuild.set_defaults(func=cmd_docs_build)
+
+    # metadata
+    p_meta = subparsers.add_parser(
+        "metadata", help="Generate or verify codemeta.json and CITATION.cff from pyproject.toml."
+    )
+    p_meta.add_argument(
+        "--check",
+        action="store_true",
+        help="Verify metadata files match pyproject.toml without writing.",
+    )
+    p_meta.set_defaults(func=cmd_metadata)
 
     # build
     p_build = subparsers.add_parser("build", help="Build distribution wheel and sdist via flit.")

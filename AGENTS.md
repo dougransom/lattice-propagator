@@ -42,16 +42,22 @@ All lattice merge operations ($\sqcup$) must preserve join-semilattice algebraic
 - Idempotence: $x \sqcup x = x$
 - Monotonic refinement: values may only gain information; never silently mutate or retract values without explicit `NetworkTMS` backtracking.
 
+### Rule 5: Version & Metadata Parity
+Whenever bumping `version` or modifying project metadata in `pyproject.toml`:
+- Run `./scripts/dev.sh metadata` (or activate the `sync-metadata` skill) to regenerate `codemeta.json` and `CITATION.cff`.
+- Note: `./scripts/dev.sh build` automatically runs metadata synchronization prior to packaging.
+
 ---
 
 ## 3. Standard Developer Commands
 
 ```bash
-./scripts/dev.sh check        # Full verification (lint + tests + doc execution + strict docs build)
-./scripts/dev.sh test         # Run pytest suite (including markdown code blocks)
+./scripts/dev.sh check        # Full verification (metadata + lint + tests + docs build)
+./scripts/dev.sh test         # Run pytest suite (including markdown code blocks & parity tests)
 ./scripts/dev.sh lint         # Check style with Ruff
 ./scripts/dev.sh format       # Autoformat code with Ruff
 ./scripts/dev.sh docs-serve   # Start local MkDocs preview server (http://127.0.0.1:8000)
 ./scripts/dev.sh docs-build   # Build static documentation site
-./scripts/dev.sh build        # Build wheel and sdist packages via Flit
+./scripts/dev.sh metadata     # Generate/sync codemeta.json and CITATION.cff from pyproject.toml
+./scripts/dev.sh build        # Sync metadata + build wheel and sdist packages via Flit
 ```

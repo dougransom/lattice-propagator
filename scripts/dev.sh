@@ -6,6 +6,7 @@
 #   ./scripts/dev.sh format
 #   ./scripts/dev.sh docs-serve
 #   ./scripts/dev.sh docs-build
+#   ./scripts/dev.sh metadata
 #   ./scripts/dev.sh build
 #   ./scripts/dev.sh check
 
