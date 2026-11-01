@@ -71,6 +71,7 @@ nav:
   - Examples & Tutorials:
       - Bidirectional Arithmetic: examples/arithmetic.md
       - Sensor Fusion & Kalman Filters: examples/sensor_fusion.md
+      - Evidential Reasoning & Presence: examples/evidence.md
       - Interval Envelopes & Bounds: examples/intervals.md
       - Sudoku & Search Choice Engine: examples/sudoku.md
   - API Reference:

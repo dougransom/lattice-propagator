@@ -19,6 +19,8 @@ Reactive containers, worklist fixed-point engine, and built-in constraint propag
         - RatePropagator
         - LagPropagator
         - KalmanEstimatorPropagator
+        - DempsterShaferPropagator
+        - SpatialZone
         - ThresholdPropagator
         - BoundedLinearPropagator
         - AllDifferentPropagator

@@ -454,6 +454,131 @@ class MapLattice(LatticeValue):
         return f"MapLattice{{{', '.join(pairs)}}}"
 
 
+@dataclass(frozen=True)
+class BeliefMassValue(LatticeValue):
+    """Dempster-Shafer belief mass assignment over subsets of a frame of discernment.
+
+    Represents evidential states m: 2^Θ → [0, 1] where ∑ m(A) = 1.0.
+    Focal elements are subsets with strictly positive mass. Complete ignorance
+    (vacuous belief) is represented by assigning mass 1.0 to the entire frame Θ.
+    """
+
+    masses: dict[frozenset[str], float] = field(default_factory=dict)
+    frame: frozenset[str] = field(default_factory=frozenset)
+
+    def __post_init__(self) -> None:
+        computed_frame = set(self.frame)
+        cleaned: dict[frozenset[str], float] = {}
+        for s, m in self.masses.items():
+            if m > 1e-9:
+                fs = frozenset([s] if isinstance(s, str) else s)
+                cleaned[fs] = float(m)
+                computed_frame.update(fs)
+        object.__setattr__(self, "masses", cleaned)
+        object.__setattr__(self, "frame", frozenset(computed_frame))
+
+    @classmethod
+    def ignorance(cls, frame: Iterable[str]) -> BeliefMassValue:
+        """Create a vacuous belief function representing total ignorance on frame Θ."""
+        f_set = frozenset(frame)
+        return cls(masses={f_set: 1.0}, frame=f_set)
+
+    @classmethod
+    def certain(cls, hypothesis: str, frame: Iterable[str] | None = None) -> BeliefMassValue:
+        """Create a dogmatic belief function placing 100% certainty on a hypothesis."""
+        h_set = frozenset([hypothesis])
+        f_set = frozenset(frame) if frame is not None else h_set
+        return cls(masses={h_set: 1.0}, frame=f_set | h_set)
+
+    @classmethod
+    def simple(
+        cls,
+        hypothesis: str | Iterable[str],
+        confidence: float,
+        frame: Iterable[str],
+    ) -> BeliefMassValue:
+        """Create a simple support function m(H) = confidence, m(Θ) = 1 − confidence."""
+        conf = max(0.0, min(1.0, float(confidence)))
+        f_set = frozenset(frame)
+        h_set = frozenset([hypothesis] if isinstance(hypothesis, str) else hypothesis) & f_set
+        if not h_set:
+            h_set = f_set
+        if conf >= 1.0 - 1e-9:
+            return cls(masses={h_set: 1.0}, frame=f_set)
+        if conf <= 1e-9 or h_set == f_set:
+            return cls(masses={f_set: 1.0}, frame=f_set)
+        return cls(masses={h_set: conf, f_set: 1.0 - conf}, frame=f_set)
+
+    def belief(self, hypothesis: str | Iterable[str]) -> float:
+        """Return Bel(A): lower probability / total belief committed to hypothesis A."""
+        target = frozenset([hypothesis] if isinstance(hypothesis, str) else hypothesis)
+        return sum(m for s, m in self.masses.items() if s.issubset(target))
+
+    def plausibility(self, hypothesis: str | Iterable[str]) -> float:
+        """Return Pl(A): upper probability / maximum plausibility compatible with A."""
+        target = frozenset([hypothesis] if isinstance(hypothesis, str) else hypothesis)
+        return sum(m for s, m in self.masses.items() if bool(s & target))
+
+    def doubt(self, hypothesis: str | Iterable[str]) -> float:
+        """Return Dou(A) = 1 − Pl(A) = Bel(¬A)."""
+        return max(0.0, 1.0 - self.plausibility(hypothesis))
+
+    def evidential_interval(self, hypothesis: str | Iterable[str]) -> tuple[float, float]:
+        """Return [Bel(A), Pl(A)] evidential interval bounding true probability."""
+        return (self.belief(hypothesis), self.plausibility(hypothesis))
+
+    def pignistic_probability(self, hypothesis: str) -> float:
+        """Compute the BetP(x) pignistic probability distribution for decision making."""
+        prob = 0.0
+        for s, m in self.masses.items():
+            if hypothesis in s and len(s) > 0:
+                prob += m / len(s)
+        return prob
+
+    def conflict_with(self, other: BeliefMassValue) -> float:
+        """Compute the orthogonal conflict metric K ∈ [0, 1] with another mass assignment."""
+        conflict = 0.0
+        for s1, m1 in self.masses.items():
+            for s2, m2 in other.masses.items():
+                if not (s1 & s2):
+                    conflict += m1 * m2
+        return min(conflict, 1.0)
+
+    def combine(self, other: BeliefMassValue) -> LatticeValue:
+        """Combine two mass assignments via Dempster's rule of combination (orthogonal sum)."""
+        if self == other:
+            return self
+
+        raw: dict[frozenset[str], float] = {}
+        conflict = 0.0
+
+        for s1, m1 in self.masses.items():
+            for s2, m2 in other.masses.items():
+                inter = s1 & s2
+                prod = m1 * m2
+                if not inter:
+                    conflict += prod
+                else:
+                    raw[inter] = raw.get(inter, 0.0) + prod
+
+        if conflict >= 1.0 - 1e-9:
+            return Contradiction(
+                reason=f"Total conflict in Dempster-Shafer evidence combination (K={conflict:.4f})",
+                conflicting_values=(self, other),
+            )
+
+        scale = 1.0 / (1.0 - conflict)
+        new_masses = {s: m * scale for s, m in raw.items()}
+        return BeliefMassValue(masses=new_masses, frame=self.frame | other.frame)
+
+    def __repr__(self) -> str:
+        items = []
+        for s, m in sorted(self.masses.items(), key=lambda x: -x[1]):
+            name = "{" + ", ".join(sorted(s)) + "}"
+            items.append(f"{name}: {m:.3f}")
+        return f"BeliefMass({', '.join(items)})"
+
+
 BOTTOM = Bottom()
 
 
@@ -622,6 +747,11 @@ def _merge_map_lattices(a: MapLattice, b: MapLattice) -> LatticeValue:
     return MapLattice(mapping=merged_dict)
 
 
+def _merge_belief_masses(a: BeliefMassValue, b: BeliefMassValue) -> LatticeValue:
+    """Compute monotonic orthogonal join of two Dempster-Shafer belief mass functions."""
+    return a.combine(b)
+
+
 MERGE_DISPATCH: dict[type, Callable[[Any, Any], LatticeValue]] = {
     GaussianValue: _merge_gaussians,
     IntervalValue: _merge_intervals,
@@ -631,6 +761,7 @@ MERGE_DISPATCH: dict[type, Callable[[Any, Any], LatticeValue]] = {
     FlatValue: _merge_flat_values,
     SetLattice: _merge_set_lattices,
     MapLattice: _merge_map_lattices,
+    BeliefMassValue: _merge_belief_masses,
 }
 
 

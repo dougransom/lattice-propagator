@@ -25,10 +25,12 @@ import math
 from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from .lattice import (
     BOTTOM,
+    BeliefMassValue,
     Bottom,
     Contradiction,
     DiscreteDomain,
@@ -681,10 +683,12 @@ class FunctionalPropagator(Propagator):
         fn: Callable[..., LatticeValue],
         inputs: list[Cell],
         output: Cell,
+        overwrite: bool = True,
     ) -> None:
         super().__init__(name, inputs=inputs, outputs=[output])
         self.fn = fn
         self.output = output
+        self.overwrite = overwrite
 
     def alert(self, network: PropagatorNetwork) -> None:
         if any(isinstance(c.value, (Bottom, Contradiction)) for c in self.inputs):
@@ -693,7 +697,7 @@ class FunctionalPropagator(Propagator):
         try:
             res = self.fn(*args)
             if isinstance(res, LatticeValue) and not isinstance(res, Bottom):
-                self.output.set_value(res, source=self.name)
+                self.output.set_value(res, source=self.name, overwrite=self.overwrite)
         except (TypeError, ValueError, ArithmeticError):
             pass
 
@@ -703,9 +707,10 @@ def lift_propagator(
     fn: Callable[..., LatticeValue],
     inputs: list[Cell],
     output: Cell,
+    overwrite: bool = True,
 ) -> FunctionalPropagator:
     """Lift a function over lattice values into a reactive propagator."""
-    return FunctionalPropagator(name, fn, inputs, output)
+    return FunctionalPropagator(name, fn, inputs, output, overwrite=overwrite)
 
 
 class RatePropagator(Propagator):
@@ -977,6 +982,88 @@ class KalmanEstimatorPropagator(Propagator):
             return
 
         self.step(z, r=r, dt=dt)
+
+
+@dataclass(frozen=True)
+class SpatialZone:
+    """Rectangular 2D bounding zone for a room or spatial region."""
+
+    name: str
+    x_min: float
+    x_max: float
+    y_min: float
+    y_max: float
+
+    def contains(self, x: float, y: float) -> bool:
+        """Return True if coordinate (x, y) falls within this spatial zone."""
+        return self.x_min <= x <= self.x_max and self.y_min <= y <= self.y_max
+
+
+class DempsterShaferPropagator(Propagator):
+    """Combines evidence from multiple source cells using Dempster's rule of combination.
+
+    Observes N input cells holding BeliefMassValue (or Bottom). Whenever any input
+    cell updates with new evidential mass, it combines all active evidence orthogonally
+    and writes the resulting fused BeliefMassValue to output_cell.
+    If conflict_cell is provided, it publishes the orthogonal conflict metric K in [0, 1].
+    """
+
+    def __init__(
+        self,
+        name: str,
+        inputs: list[Cell],
+        output: Cell,
+        conflict_cell: Cell | None = None,
+        conflict_threshold: float = 0.95,
+    ) -> None:
+        out_cells = [output] if conflict_cell is None else [output, conflict_cell]
+        super().__init__(name, inputs=inputs, outputs=out_cells)
+        self.output_cell = output
+        self.conflict_cell = conflict_cell
+        self.conflict_threshold = conflict_threshold
+
+    def alert(self, network: PropagatorNetwork) -> None:
+        """Combine active evidence across input cells."""
+        active_masses: list[BeliefMassValue] = []
+        for c in self.inputs:
+            val = c.value
+            if isinstance(val, BeliefMassValue):
+                active_masses.append(val)
+            elif isinstance(val, Contradiction):
+                self.output_cell.set_value(val, source=self.name)
+                return
+
+        if not active_masses:
+            return
+
+        current: LatticeValue = active_masses[0]
+        max_conflict = 0.0
+
+        for nxt in active_masses[1:]:
+            if isinstance(current, BeliefMassValue):
+                k = current.conflict_with(nxt)
+                max_conflict = max(max_conflict, k)
+                current = current.combine(nxt)
+                if isinstance(current, Contradiction):
+                    break
+
+        if self.conflict_cell is not None:
+            self.conflict_cell.set_value(
+                FlatValue(round(max_conflict, 4)),
+                source=self.name,
+                overwrite=True,
+            )
+
+        if max_conflict >= self.conflict_threshold and not isinstance(current, Contradiction):
+            current = Contradiction(
+                reason=(
+                    f"High evidential conflict in DempsterShaferPropagator '{self.name}': "
+                    f"K={max_conflict:.4f} >= threshold {self.conflict_threshold}"
+                ),
+                conflicting_values=tuple(active_masses),
+            )
+
+        self.output_cell.set_value(current, source=self.name, overwrite=True)
 
 
 class BoundedLinearPropagator(Propagator):

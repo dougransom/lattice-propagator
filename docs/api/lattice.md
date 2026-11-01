@@ -17,5 +17,6 @@ Information lattices, partial orders, and monotonic join/merge operations.
         - CircularInterval
         - SetLattice
         - MapLattice
+        - BeliefMassValue
         - DiscreteDomain
         - merge_lattice

@@ -52,8 +52,12 @@ A `Propagator` is an autonomous computational unit. It:
 | `ConditionalPropagator(pred, cons, alt, out)` | Multiplexer with Sussman-Radul consensus optimization | Forward |
 | `RatePropagator(source, rate, dt)` | First-order velocity/derivative estimation | Forward |
 | `LagPropagator(input, output, tau, dt)` | First-order exponential lag filter (thermal inertia) | Forward |
-| `KalmanEstimatorPropagator(...)` | Fuses noisy linear dynamics with noisy measurements | Dynamic |
+| `KalmanEstimatorPropagator(...)` | Fuses noisy linear dynamics with noisy measurements ([Case study](../examples/sensor_fusion.md#why-a-propagator-instead-of-a-python-function)) | Dynamic |
+| `DempsterShaferPropagator(...)` | Fuses multi-source evidential mass functions over subset lattices | Evidential |
 | `AllDifferentPropagator(cells)` | Pairwise exclusion and hidden-single deduction | Multi |
+
+!!! tip "Propagators vs. Functions"
+    For a concrete case study comparing reactive lattice propagators against classical procedural Python functions (e.g. in Kalman filtering), see [Why a Propagator Instead of a Python Function?](../examples/sensor_fusion.md#why-a-propagator-instead-of-a-python-function).
 
 ---
 
