@@ -8,7 +8,7 @@ We welcome pull requests, issue reports, documentation improvements, and feedbac
 
 ## Code Standards
 
-1. **Zero Runtime Dependencies**: The core package `lattice-propagator` must remain standalone with zero runtime dependencies.
+1. **Dependency Guideline**: Strong preference for zero runtime dependencies. Any addition of dependencies (runtime or dev) requires explicit human approval.
 2. **Purity & Monotonicity**: Information in cells must only refine monotonically according to join-semilattice algebraic laws (associativity, commutativity, idempotence).
 3. **Type Annotations**: All public classes, methods, and functions must include strict Python 3.11+ type hints.
 4. **Docstrings**: We follow the **Google Python Style Guide** for docstrings to ensure clean rendering in `mkdocstrings`.
