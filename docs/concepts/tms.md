@@ -54,3 +54,30 @@ engine = ChoiceEngine(network)
 # Speculatively branches on candidate values, uses Minimum Remaining Values (MRV)
 # heuristics, and backtracks upon contradiction until a valid assignment is found.
 ```
+
+---
+
+## 4. Explanations & Localization (i18n)
+
+TMS explanations decouple causal provenance from text rendering. Explanations can be retrieved as formatted strings or as structured `ExplanationNode` trees:
+
+```python
+from lattice_propagator import GaussianValue, TruthMaintenanceSystem, make_template_translator
+
+tms = TruthMaintenanceSystem(cell_id="living_room_temp", unit="°C")
+tms.assert_evidence("sensor.thermostat", GaussianValue(mean=21.2, variance=0.1))
+
+# 1. Structured AST Node (suitable for Home Assistant entity attributes or JSON APIs)
+node = tms.explain_node()
+data = node.to_dict()
+assert data["key"] == "tms.gaussian_fusion"
+
+# 2. Translated / localized rendering via template dictionary
+fr_translator = make_template_translator(
+    {
+        "tms.gaussian_fusion": "Combinaison de {sources} pour obtenir {mean:.1f}{unit} (±{spread:.2f}{unit}).{degraded_note}"
+    }
+)
+translated = tms.explain(translator=fr_translator)
+assert "Combinaison" in translated
+```

@@ -54,18 +54,23 @@ from .primitives import (
     lift_propagator,
 )
 from .tms import (
+    DEFAULT_EXPLANATION_TEMPLATES,
     Assumption,
+    ExplanationNode,
     Justification,
     NetworkTMS,
     Premise,
+    Translator,
     TruthMaintenanceSystem,
     format_lattice_value,
+    make_template_translator,
 )
 
 __version__ = "0.0.1dev1"
 
 __all__ = [
     "BOTTOM",
+    "DEFAULT_EXPLANATION_TEMPLATES",
     "AdderPropagator",
     "AllDifferentPropagator",
     "ArithmeticPropagator",
@@ -80,6 +85,7 @@ __all__ = [
     "Contradiction",
     "DempsterShaferPropagator",
     "DiscreteDomain",
+    "ExplanationNode",
     "FlatValue",
     "FunctionalPropagator",
     "GaussianValue",
@@ -100,8 +106,10 @@ __all__ = [
     "SpatialZone",
     "SwitchPropagator",
     "ThresholdPropagator",
+    "Translator",
     "TruthMaintenanceSystem",
     "format_lattice_value",
     "lift_propagator",
+    "make_template_translator",
     "merge_lattice",
 ]

@@ -12,3 +12,7 @@ Truth Maintenance System (TMS), dependency provenance tracking, justifications, 
         - Justification
         - NetworkTMS
         - format_lattice_value
+        - ExplanationNode
+        - DEFAULT_EXPLANATION_TEMPLATES
+        - make_template_translator
+        - Translator

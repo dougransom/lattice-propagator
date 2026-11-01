@@ -223,3 +223,99 @@ def test_multihop_causal_explanation() -> None:
     assert "└── [ArithmeticPropagator]" in causal_explain
     assert "Combining t1 (18.0°C) into 18.0°C" in causal_explain
     assert "Combining t2 (18.4°C) into 18.4°C" in causal_explain
+
+
+def test_tms_explanation_node_structure_and_serialization() -> None:
+    """Test that explain_node produces structured, serializable ExplanationNode trees."""
+    tms = TruthMaintenanceSystem(cell_id="living_room_temp", unit="°C")
+    tms.assert_evidence("sensor.thermostat", GaussianValue(mean=21.0, variance=0.1))
+    tms.assert_evidence("sensor.radiator", GaussianValue(mean=22.0, variance=0.2))
+
+    node = tms.explain_node()
+    assert node.key == "tms.gaussian_fusion"
+    assert node.cell_id == "living_room_temp"
+    assert not node.is_degraded
+    assert not node.is_contradiction
+    assert "thermostat" in node.parameters["sources"]
+    assert "radiator" in node.parameters["sources"]
+
+    data = node.to_dict()
+    assert data["key"] == "tms.gaussian_fusion"
+    assert data["cell_id"] == "living_room_temp"
+    assert data["is_degraded"] is False
+    assert "parameters" in data
+    assert "sources" in data["parameters"]
+
+
+def test_tms_translator_injection_and_template_overrides() -> None:
+    """Test custom Translator callable and make_template_translator for i18n support."""
+    from lattice_propagator import make_template_translator
+
+    # Custom French templates for Home Assistant localization demonstration
+    fr_templates = {
+        "tms.gaussian_fusion": "{prefix}Combinaison de {sources} pour obtenir {mean:.1f}{unit} (±{spread:.2f}{unit}).{degraded_note}",
+        "tms.degraded_note": " Remarque: état dégradé; {missing} est hors ligne.",
+    }
+    fr_translator = make_template_translator(fr_templates)
+
+    tms = TruthMaintenanceSystem(cell_id="salon_temp", unit="°C", translator=fr_translator)
+    tms.assert_evidence("sensor.thermostat", GaussianValue(mean=21.0, variance=0.1))
+    tms.assert_evidence("sensor.zigbee", GaussianValue(mean=22.0, variance=0.2))
+
+    # Verify translated output
+    fr_explain = tms.explain()
+    assert "Combinaison de" in fr_explain
+    assert "pour obtenir" in fr_explain
+
+    # Simulate sensor offline (degraded state)
+    tms.retract_evidence("sensor.zigbee", reason="offline")
+    degraded_explain = tms.explain()
+    assert "Remarque: état dégradé; zigbee est hors ligne." in degraded_explain
+
+    # Verify per-call override
+    en_explain = tms.explain(translator=lambda k, default, p: default.format(**p))
+    assert "Combining" in en_explain
+    assert "Note: Degraded state; zigbee is offline." in en_explain
+
+
+def test_tms_contradiction_translation() -> None:
+    """Test localization of contradiction diagnostics and actionable recommendations."""
+    from lattice_propagator import FlatValue, make_template_translator
+
+    custom_templates = {
+        "tms.contradiction": "CONFLIT DÉTECTÉ sur {cell_name}. Prémisses: {premises}. {recommendation}",
+        "tms.recommend_retract": "Conseil: Rétracter l'hypothèse '{source_id}' (confiance={confidence:.2f}).",
+    }
+    translator = make_template_translator(custom_templates)
+
+    tms = TruthMaintenanceSystem(cell_id="safety_switch", translator=translator)
+    tms.assert_evidence("ground_sensor", FlatValue("off"), is_assumption=False)
+    tms.assert_evidence("user_rule", FlatValue("on"), is_assumption=True, confidence=0.7)
+
+    diag = tms.explain()
+    assert "CONFLIT DÉTECTÉ sur safety_switch" in diag
+    assert "Conseil: Rétracter l'hypothèse 'user_rule' (confiance=0.70)." in diag
+
+
+def test_cell_and_network_explain_node_and_translator() -> None:
+    """Test explain_node and translator pass-through on Cell and PropagatorNetwork."""
+    from lattice_propagator import PropagatorNetwork, make_template_translator
+
+    net = PropagatorNetwork("TestNet")
+    c = net.add_cell("temp", unit="°C")
+    c.set_value(GaussianValue(mean=20.0, variance=0.1), source="sensor.t1")
+
+    node = net.explain_node("temp")
+    assert node.key == "tms.gaussian_fusion"
+    assert node.cell_id == "temp"
+
+    cell_node = c.explain_node()
+    assert cell_node.cell_id == "temp"
+
+    de_translator = make_template_translator(
+        {
+            "tms.gaussian_fusion": "Kombiniere {sources} zu {mean:.1f}{unit} (±{spread:.2f}{unit}).{degraded_note}"
+        }
+    )
+    de_explain = net.explain("temp", translator=de_translator)
+    assert de_explain.startswith("Kombiniere t1 (20.0°C) zu 20.0°C")

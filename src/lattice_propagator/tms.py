@@ -15,7 +15,7 @@ Provides human-readable plain-English explanations and Mermaid diagram generatio
 from __future__ import annotations
 
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -60,6 +60,160 @@ class Justification:
     rule_name: str
     antecedents: tuple[str, ...] = field(default_factory=tuple)
     parameters: dict[str, Any] = field(default_factory=dict)
+
+
+Translator = Callable[[str, str, Mapping[str, Any]], str]
+
+
+def make_template_translator(templates: Mapping[str, str]) -> Translator:
+    """Create a translator callable that overrides default templates with custom translations.
+
+    Args:
+        templates: Mapping from message keys (e.g. 'tms.gaussian_fusion') to format strings.
+
+    Returns:
+        A Translator callable suitable for passing to `explain()` or `ExplanationNode.render()`.
+    """
+
+    def _translate(key: str, default_template: str, params: Mapping[str, Any]) -> str:
+        template = templates.get(key, default_template)
+        return template.format(**params)
+
+    return _translate
+
+
+DEFAULT_EXPLANATION_TEMPLATES: dict[str, str] = {
+    "tms.no_active_sensors": "{prefix}No active sensors reporting for {cell_name}. Reverted to prior ({prior}).",
+    "tms.contradiction": "{prefix}Contradiction detected on {cell_name}. Conflicting premises: {premises}. {recommendation}",
+    "tms.recommend_retract": "Recommendation: Retract assumption '{source_id}' (confidence={confidence:.2f}).",
+    "tms.no_assumptions": "No defeasible assumptions present; contradiction is between ground facts.",
+    "tms.propagator_deduction": "{prefix}Deduced by {rule_name} from {antecedents}: {fused}.",
+    "tms.gaussian_fusion": "{prefix}Combining {sources} into {mean:.1f}{unit} (±{spread:.2f}{unit}).{degraded_note}",
+    "tms.interval_fusion": "{prefix}Intersecting {sources} into [{min_val:.1f}, {max_val:.1f}]{unit}.{degraded_note}",
+    "tms.discrete_fusion": "{prefix}Constrained candidate states from {sources} down to {fused}.{degraded_note}",
+    "tms.generic_fusion": "{prefix}Fused {count} active sources: {sources} into {fused}.{degraded_note}",
+    "tms.degraded_note": " Note: Degraded state; {missing} is offline.",
+    "tms.rule_branch": "{prefix}└── [{rule_name}]{params}",
+    "tms.cycle_memoized": "{prefix}└── {antecedent} (cycle/memoized)",
+    "tms.antecedent_leaf": "{prefix}└── {antecedent}",
+}
+
+
+@dataclass
+class ExplanationNode:
+    """Structured, localizable representation of an explanation step and its causal tree.
+
+    Decouples causal provenance analysis from formatted string representation to enable
+    internationalization (i18n), semantic inspection, and serializable payloads
+    for external systems (e.g. Home Assistant entities, WebSocket APIs, or frontends).
+
+    Attributes:
+        key: Semantic translation key (e.g. 'tms.gaussian_fusion', 'tms.contradiction').
+        parameters: Interpolation parameters for message formatting.
+        default_template: Default English format template with named placeholders.
+        cell_id: Identifier of the cell explained by this node.
+        display_name: Optional human-readable display name for the cell.
+        fused_value: Current fused lattice value of the cell, if computed.
+        is_contradiction: True if this explanation represents a contradiction state.
+        is_degraded: True if the cell's active inputs are degraded or offline.
+        rule_name: Propagator or inference rule name if deduced.
+        rule_parameters: Parameters passed to the rule or justification.
+        indent_offset: Relative indentation offset for rendering tree hierarchy.
+        children: Subordinate causal antecedent explanation nodes.
+    """
+
+    key: str
+    parameters: dict[str, Any]
+    default_template: str
+    cell_id: str
+    display_name: str | None = None
+    fused_value: LatticeValue | None = None
+    is_contradiction: bool = False
+    is_degraded: bool = False
+    rule_name: str | None = None
+    rule_parameters: dict[str, Any] | None = None
+    indent_offset: int = 0
+    children: list[ExplanationNode] = field(default_factory=list)
+
+    def render(self, indent: int = 0, translator: Translator | None = None) -> str:
+        """Render this explanation node and its children to an indented text string.
+
+        Args:
+            indent: Indentation level (each level corresponds to two spaces).
+            translator: Optional translation callable `(key, default_template, params) -> str`.
+                If None, the default English template is formatted.
+
+        Returns:
+            Human-readable, formatted explanation string.
+        """
+        prefix = "  " * indent
+        params = dict(self.parameters)
+        params["prefix"] = prefix
+
+        if self.is_degraded and "degraded_missing" in params:
+            missing_text = params["degraded_missing"]
+            deg_default = DEFAULT_EXPLANATION_TEMPLATES["tms.degraded_note"]
+            if translator is not None:
+                params["degraded_note"] = translator(
+                    "tms.degraded_note",
+                    deg_default,
+                    {"missing": missing_text},
+                )
+            else:
+                params["degraded_note"] = deg_default.format(missing=missing_text)
+
+        if self.is_contradiction and "rec_key" in params:
+            rec_key = params["rec_key"]
+            rec_params = params.get("rec_params", {})
+            rec_default = DEFAULT_EXPLANATION_TEMPLATES.get(rec_key, "")
+            if translator is not None and rec_default:
+                params["recommendation"] = translator(rec_key, rec_default, rec_params)
+            elif rec_default:
+                params["recommendation"] = rec_default.format(**rec_params)
+
+        if translator is not None:
+            local_line = translator(self.key, self.default_template, params)
+        else:
+            local_line = self.default_template.format(**params)
+
+        lines = [local_line]
+        for child in self.children:
+            lines.append(child.render(indent=indent + child.indent_offset, translator=translator))
+
+        return "\n".join(lines)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert the explanation node into a JSON-serializable dictionary."""
+        clean_params = {}
+        for k, v in self.parameters.items():
+            if k == "prefix":
+                continue
+            if isinstance(v, (str, int, float, bool, list, dict)) or v is None:
+                clean_params[k] = v
+            else:
+                clean_params[k] = str(v)
+
+        result: dict[str, Any] = {
+            "key": self.key,
+            "cell_id": self.cell_id,
+            "parameters": clean_params,
+            "is_contradiction": self.is_contradiction,
+            "is_degraded": self.is_degraded,
+        }
+        if self.display_name:
+            result["display_name"] = self.display_name
+        if self.fused_value is not None:
+            result["fused_value"] = str(self.fused_value)
+        if self.rule_name:
+            result["rule_name"] = self.rule_name
+        if self.rule_parameters:
+            result["rule_parameters"] = self.rule_parameters
+        if self.children:
+            result["children"] = [child.to_dict() for child in self.children]
+        return result
+
+    def __str__(self) -> str:
+        return self.render()
 
 
 def _clean_source_id(source_id: str) -> str:
@@ -158,6 +312,7 @@ class TruthMaintenanceSystem:
         display_name: str | None = None,
         network: Any = None,
         network_tms: Any = None,
+        translator: Translator | None = None,
     ) -> None:
         """Initialize the Truth Maintenance System."""
         self.cell_id = cell_id
@@ -166,6 +321,7 @@ class TruthMaintenanceSystem:
         self.display_name = display_name
         self.network = network
         self.network_tms = network_tms
+        self.translator = translator
         self.premises: dict[str, Premise] = {}
         self.nogoods: list[frozenset[str]] = []
 
@@ -241,7 +397,11 @@ class TruthMaintenanceSystem:
             return 1.0
         return len(self.active_sources) / total
 
-    def diagnose_contradiction(self, active_premises: list[Premise]) -> str:
+    def diagnose_contradiction(
+        self,
+        active_premises: list[Premise],
+        translator: Translator | None = None,
+    ) -> str:
         """Produce an actionable diagnostic and DDB retraction recommendation for a contradiction."""
         parts = []
         for p in active_premises:
@@ -255,11 +415,32 @@ class TruthMaintenanceSystem:
         if assumptions:
             assumptions.sort(key=lambda p: (p.confidence, -p.timestamp))
             weakest = assumptions[0]
+            rec_key = "tms.recommend_retract"
+            rec_params = {"source_id": weakest.source_id, "confidence": weakest.confidence}
             rec = f"Recommendation: Retract assumption '{weakest.source_id}' (confidence={weakest.confidence:.2f})."
         else:
+            rec_key = "tms.no_assumptions"
+            rec_params = {}
             rec = "No defeasible assumptions present; contradiction is between ground facts."
 
+        eff_tr = translator if translator is not None else self.translator
         cell_name = self.display_name or _clean_source_id(self.cell_id)
+
+        if eff_tr is not None:
+            rec_default = DEFAULT_EXPLANATION_TEMPLATES[rec_key]
+            rec = eff_tr(rec_key, rec_default, rec_params)
+            diag_default = DEFAULT_EXPLANATION_TEMPLATES["tms.contradiction"]
+            return eff_tr(
+                "tms.contradiction",
+                diag_default,
+                {
+                    "prefix": "",
+                    "cell_name": cell_name,
+                    "premises": premises_str,
+                    "recommendation": rec,
+                },
+            )
+
         return f"Contradiction detected on {cell_name}. Conflicting premises: {premises_str}. {rec}"
 
     def _resolve_upstream_tms(self, antecedent_id: str) -> TruthMaintenanceSystem | None:
@@ -274,60 +455,131 @@ class TruthMaintenanceSystem:
                 return cell.get_or_create_tms()
         return None
 
-    def explain(
+    def explain_node(
         self,
         unit: str | None = None,
         depth: int | None = 1,
-        indent: int = 0,
         visited: set[str] | None = None,
-    ) -> str:
-        """Generate a human-readable, plain-English explanation.
+    ) -> ExplanationNode:
+        """Generate a structured, localizable explanation node and causal tree.
 
         Args:
             unit: Optional unit string override (e.g. '°C', 'm/s').
             depth: Traversal depth for causal antecedents (1 for cell-local, None or >1 for recursive).
-            indent: Indentation level for recursive causal trees.
             visited: Set of visited cell IDs to avoid cyclic recursion.
+
+        Returns:
+            An ExplanationNode representing this cell's provenance, local explanation,
+            and upstream causal children.
         """
         eff_unit = unit if unit is not None else self.unit
-        prefix = "  " * indent
         active = [p for p in self.premises.values() if p.is_active]
         missing = [p for p in self.premises.values() if not p.is_active]
+        cell_name = self.display_name or _clean_source_id(self.cell_id)
 
+        # 0. No active premises
         if not active:
-            cell_name = self.display_name or _clean_source_id(self.cell_id)
-            return f"{prefix}No active sensors reporting for {cell_name}. Reverted to prior ({self.default_prior})."
+            return ExplanationNode(
+                key="tms.no_active_sensors",
+                parameters={"cell_name": cell_name, "prior": str(self.default_prior)},
+                default_template=DEFAULT_EXPLANATION_TEMPLATES["tms.no_active_sensors"],
+                cell_id=self.cell_id,
+                display_name=self.display_name,
+                is_degraded=False,
+            )
 
         fused = self.compute_fused_value()
 
         # Handle Contradiction
         if isinstance(fused, Contradiction):
-            diag = self.diagnose_contradiction(active)
-            return f"{prefix}{diag}"
+            parts = []
+            for p in active:
+                kind = "assumption" if p.is_assumption else "ground"
+                parts.append(
+                    f"{_clean_source_id(p.source_id)}={format_lattice_value(p.value, unit=self.unit)} ({kind}, conf={p.confidence:.2f})"
+                )
+            premises_str = ", ".join(parts)
+
+            assumptions = [p for p in active if p.is_assumption]
+            if assumptions:
+                assumptions.sort(key=lambda p: (p.confidence, -p.timestamp))
+                weakest = assumptions[0]
+                rec = f"Recommendation: Retract assumption '{weakest.source_id}' (confidence={weakest.confidence:.2f})."
+                rec_key = "tms.recommend_retract"
+                rec_params = {"source_id": weakest.source_id, "confidence": weakest.confidence}
+            else:
+                rec = "No defeasible assumptions present; contradiction is between ground facts."
+                rec_key = "tms.no_assumptions"
+                rec_params = {}
+
+            return ExplanationNode(
+                key="tms.contradiction",
+                parameters={
+                    "cell_name": cell_name,
+                    "premises": premises_str,
+                    "recommendation": rec,
+                    "rec_key": rec_key,
+                    "rec_params": rec_params,
+                },
+                default_template=DEFAULT_EXPLANATION_TEMPLATES["tms.contradiction"],
+                cell_id=self.cell_id,
+                display_name=self.display_name,
+                fused_value=fused,
+                is_contradiction=True,
+            )
 
         gaussian_premises = [
             (p.source_id, p.value) for p in active if isinstance(p.value, GaussianValue)
         ]
 
+        degraded_note = ""
+        degraded_missing = ""
+        if missing:
+            degraded_missing = ", ".join(_clean_source_id(s) for s in self.missing_sources)
+            degraded_note = f" Note: Degraded state; {degraded_missing} is offline."
+
         # 1. Single active premise with justification (propagator deduction)
         if len(active) == 1 and active[0].justification is not None:
             j = active[0].justification
-            local_explanation = (
-                f"{prefix}Deduced by {j.rule_name} from {', '.join(_clean_source_id(a) for a in j.antecedents)}: "
-                f"{format_lattice_value(fused, unit=eff_unit)}."
+            antecedents_str = ", ".join(_clean_source_id(a) for a in j.antecedents)
+            node = ExplanationNode(
+                key="tms.propagator_deduction",
+                parameters={
+                    "rule_name": j.rule_name,
+                    "antecedents": antecedents_str,
+                    "fused": format_lattice_value(fused, unit=eff_unit),
+                },
+                default_template=DEFAULT_EXPLANATION_TEMPLATES["tms.propagator_deduction"],
+                cell_id=self.cell_id,
+                display_name=self.display_name,
+                fused_value=fused,
+                rule_name=j.rule_name,
+                rule_parameters=j.parameters,
             )
 
         # 2. Gaussian fusion explanation
         elif gaussian_premises and isinstance(fused, GaussianValue):
-            parts = []
-            for src, val in gaussian_premises:
-                parts.append(f"{_clean_source_id(src)} ({val.mean:.1f}{eff_unit})")
+            parts = [
+                f"{_clean_source_id(src)} ({val.mean:.1f}{eff_unit})"
+                for src, val in gaussian_premises
+            ]
             src_list = ", ".join(parts)
-            explanation = f"{prefix}Combining {src_list} into {fused.mean:.1f}{eff_unit} (±{1.96 * fused.standard_deviation:.2f}{eff_unit})."
-            if missing:
-                missing_str = ", ".join(_clean_source_id(s) for s in self.missing_sources)
-                explanation += f" Note: Degraded state; {missing_str} is offline."
-            local_explanation = explanation
+            node = ExplanationNode(
+                key="tms.gaussian_fusion",
+                parameters={
+                    "sources": src_list,
+                    "mean": fused.mean,
+                    "unit": eff_unit,
+                    "spread": 1.96 * fused.standard_deviation,
+                    "degraded_note": degraded_note,
+                    "degraded_missing": degraded_missing,
+                },
+                default_template=DEFAULT_EXPLANATION_TEMPLATES["tms.gaussian_fusion"],
+                cell_id=self.cell_id,
+                display_name=self.display_name,
+                fused_value=fused,
+                is_degraded=bool(missing),
+            )
 
         # 3. Interval fusion explanation
         elif all(isinstance(p.value, IntervalValue) for p in active) and isinstance(
@@ -338,11 +590,22 @@ class TruthMaintenanceSystem:
                 for p in active
             ]
             src_list = ", ".join(parts)
-            explanation = f"{prefix}Intersecting {src_list} into [{fused.min_val:.1f}, {fused.max_val:.1f}]{eff_unit}."
-            if missing:
-                missing_str = ", ".join(_clean_source_id(s) for s in self.missing_sources)
-                explanation += f" Note: Degraded state; {missing_str} is offline."
-            local_explanation = explanation
+            node = ExplanationNode(
+                key="tms.interval_fusion",
+                parameters={
+                    "sources": src_list,
+                    "min_val": fused.min_val,
+                    "max_val": fused.max_val,
+                    "unit": eff_unit,
+                    "degraded_note": degraded_note,
+                    "degraded_missing": degraded_missing,
+                },
+                default_template=DEFAULT_EXPLANATION_TEMPLATES["tms.interval_fusion"],
+                cell_id=self.cell_id,
+                display_name=self.display_name,
+                fused_value=fused,
+                is_degraded=bool(missing),
+            )
 
         # 4. DiscreteDomain fusion explanation
         elif all(isinstance(p.value, DiscreteDomain) for p in active) and isinstance(
@@ -352,11 +615,20 @@ class TruthMaintenanceSystem:
                 f"{_clean_source_id(p.source_id)} {format_lattice_value(p.value)}" for p in active
             ]
             src_list = ", ".join(parts)
-            explanation = f"{prefix}Constrained candidate states from {src_list} down to {format_lattice_value(fused)}."
-            if missing:
-                missing_str = ", ".join(_clean_source_id(s) for s in self.missing_sources)
-                explanation += f" Note: Degraded state; {missing_str} is offline."
-            local_explanation = explanation
+            node = ExplanationNode(
+                key="tms.discrete_fusion",
+                parameters={
+                    "sources": src_list,
+                    "fused": format_lattice_value(fused),
+                    "degraded_note": degraded_note,
+                    "degraded_missing": degraded_missing,
+                },
+                default_template=DEFAULT_EXPLANATION_TEMPLATES["tms.discrete_fusion"],
+                cell_id=self.cell_id,
+                display_name=self.display_name,
+                fused_value=fused,
+                is_degraded=bool(missing),
+            )
 
         # 5. Generic lattice fusion fallback
         else:
@@ -364,48 +636,109 @@ class TruthMaintenanceSystem:
                 f"{_clean_source_id(p.source_id)} ({format_lattice_value(p.value, unit=eff_unit)})"
                 for p in active
             ]
-            local_explanation = f"{prefix}Fused {len(active)} active sources: {', '.join(parts)} into {format_lattice_value(fused, unit=eff_unit)}."
-            if missing:
-                missing_str = ", ".join(_clean_source_id(s) for s in self.missing_sources)
-                local_explanation += f" Note: Degraded state; {missing_str} is offline."
+            node = ExplanationNode(
+                key="tms.generic_fusion",
+                parameters={
+                    "count": len(active),
+                    "sources": ", ".join(parts),
+                    "fused": format_lattice_value(fused, unit=eff_unit),
+                    "degraded_note": degraded_note,
+                    "degraded_missing": degraded_missing,
+                },
+                default_template=DEFAULT_EXPLANATION_TEMPLATES["tms.generic_fusion"],
+                cell_id=self.cell_id,
+                display_name=self.display_name,
+                fused_value=fused,
+                is_degraded=bool(missing),
+            )
 
         # Upstream recursive traversal if depth is None or depth > 1
         if depth is None or depth > 1:
             next_depth = None if depth is None else depth - 1
             seen = set(visited) if visited is not None else {self.cell_id}
-            sub_lines = [local_explanation]
 
             for p in active:
                 if p.justification and p.justification.antecedents:
-                    rule_label = f"└── [{p.justification.rule_name}]"
+                    rule_name = p.justification.rule_name
                     params_str = (
                         f" {p.justification.parameters}" if p.justification.parameters else ""
                     )
-                    sub_lines.append(f"{prefix}  {rule_label}{params_str}")
+                    rule_node = ExplanationNode(
+                        key="tms.rule_branch",
+                        parameters={
+                            "rule_name": rule_name,
+                            "params": params_str,
+                            "rule_parameters": p.justification.parameters or {},
+                        },
+                        default_template=DEFAULT_EXPLANATION_TEMPLATES["tms.rule_branch"],
+                        cell_id=self.cell_id,
+                        rule_name=rule_name,
+                        rule_parameters=p.justification.parameters,
+                        indent_offset=1,
+                    )
+                    node.children.append(rule_node)
 
                     for ant in p.justification.antecedents:
                         if ant in seen:
-                            sub_lines.append(
-                                f"{prefix}    └── {_clean_source_id(ant)} (cycle/memoized)"
+                            rule_node.children.append(
+                                ExplanationNode(
+                                    key="tms.cycle_memoized",
+                                    parameters={"antecedent": _clean_source_id(ant)},
+                                    default_template=DEFAULT_EXPLANATION_TEMPLATES[
+                                        "tms.cycle_memoized"
+                                    ],
+                                    cell_id=ant,
+                                    indent_offset=1,
+                                )
                             )
                             continue
                         seen.add(ant)
 
                         ant_tms = self._resolve_upstream_tms(ant)
                         if ant_tms:
-                            ant_explain = ant_tms.explain(
+                            ant_node = ant_tms.explain_node(
                                 unit=None,
                                 depth=next_depth,
-                                indent=indent + 2,
                                 visited=seen,
                             )
-                            sub_lines.append(ant_explain)
+                            ant_node.indent_offset = 1
+                            rule_node.children.append(ant_node)
                         else:
-                            sub_lines.append(f"{prefix}    └── {_clean_source_id(ant)}")
+                            rule_node.children.append(
+                                ExplanationNode(
+                                    key="tms.antecedent_leaf",
+                                    parameters={"antecedent": _clean_source_id(ant)},
+                                    default_template=DEFAULT_EXPLANATION_TEMPLATES[
+                                        "tms.antecedent_leaf"
+                                    ],
+                                    cell_id=ant,
+                                    indent_offset=1,
+                                )
+                            )
 
-            return "\n".join(sub_lines)
+        return node
 
-        return local_explanation
+    def explain(
+        self,
+        unit: str | None = None,
+        depth: int | None = 1,
+        indent: int = 0,
+        visited: set[str] | None = None,
+        translator: Translator | None = None,
+    ) -> str:
+        """Generate a human-readable explanation.
+
+        Args:
+            unit: Optional unit string override (e.g. '°C', 'm/s').
+            depth: Traversal depth for causal antecedents (1 for cell-local, None or >1 for recursive).
+            indent: Indentation level for recursive causal trees.
+            visited: Set of visited cell IDs to avoid cyclic recursion.
+            translator: Optional translator callable `(key, default_template, params) -> str`.
+                Defaults to `self.translator` or standard English template interpolation.
+        """
+        eff_tr = translator if translator is not None else self.translator
+        node = self.explain_node(unit=unit, depth=depth, visited=visited)
+        return node.render(indent=indent, translator=eff_tr)
 
     def generate_mermaid(self) -> str:
         """Generate a Mermaid flowchart representing the current cell and premises."""
@@ -562,10 +895,21 @@ class NetworkTMS:
         cell_id: str,
         unit: str | None = None,
         depth: int | None = None,
+        translator: Translator | None = None,
     ) -> str:
         """Explain the state and provenance of a network cell."""
         ctms = self.get_or_create_cell_tms(cell_id)
-        return ctms.explain(unit=unit, depth=depth)
+        return ctms.explain(unit=unit, depth=depth, translator=translator)
+
+    def explain_node(
+        self,
+        cell_id: str,
+        unit: str | None = None,
+        depth: int | None = None,
+    ) -> ExplanationNode:
+        """Generate a structured explanation node for a network cell."""
+        ctms = self.get_or_create_cell_tms(cell_id)
+        return ctms.explain_node(unit=unit, depth=depth)
 
 
 if __name__ == "__main__":

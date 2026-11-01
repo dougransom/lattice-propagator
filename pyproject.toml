@@ -57,8 +57,12 @@ build = [
     "flit>=3.9.0",
     "build>=1.2.0",
 ]
+visualize = [
+    "schemdraw>=0.23",
+    "chess>=1.11.2",
+]
 all = [
-    "lattice-propagator[dev,docs,build]",
+    "lattice-propagator[dev,docs,build,visualize]",
 ]
 
 [tool.ruff]

@@ -40,7 +40,7 @@ from .lattice import (
     LatticeValue,
     merge_lattice,
 )
-from .tms import Justification
+from .tms import ExplanationNode, Justification, Translator
 
 
 class Cell:
@@ -135,9 +135,22 @@ class Cell:
             )
         return root.tms
 
-    def explain(self, unit: str | None = None, depth: int | None = 1) -> str:
+    def explain(
+        self,
+        unit: str | None = None,
+        depth: int | None = 1,
+        translator: Translator | None = None,
+    ) -> str:
         """Generate a human-readable explanation for this cell's state and provenance."""
-        return self.get_or_create_tms().explain(unit=unit, depth=depth)
+        return self.get_or_create_tms().explain(unit=unit, depth=depth, translator=translator)
+
+    def explain_node(
+        self,
+        unit: str | None = None,
+        depth: int | None = 1,
+    ) -> ExplanationNode:
+        """Generate a structured, localizable explanation node for this cell's state."""
+        return self.get_or_create_tms().explain_node(unit=unit, depth=depth)
 
     def set_value(
         self,
@@ -1325,11 +1338,23 @@ class PropagatorNetwork:
         cell_id: str,
         unit: str | None = None,
         depth: int | None = None,
+        translator: Translator | None = None,
     ) -> str:
         """Explain the state and causal provenance of a network cell."""
         if cell_id not in self.cells:
             raise KeyError(f"Cell '{cell_id}' not found in network.")
-        return self.cells[cell_id].explain(unit=unit, depth=depth)
+        return self.cells[cell_id].explain(unit=unit, depth=depth, translator=translator)
+
+    def explain_node(
+        self,
+        cell_id: str,
+        unit: str | None = None,
+        depth: int | None = None,
+    ) -> ExplanationNode:
+        """Generate a structured explanation node for a network cell."""
+        if cell_id not in self.cells:
+            raise KeyError(f"Cell '{cell_id}' not found in network.")
+        return self.cells[cell_id].explain_node(unit=unit, depth=depth)
 
     def generate_mermaid(self) -> str:
         """Generate a Mermaid diagram representing the network structure and state."""
@@ -1355,13 +1380,20 @@ class ChoiceEngine:
     point, and backtracks upon encountering a Contradiction.
     """
 
-    def __init__(self, network: PropagatorNetwork, max_depth: int = 100) -> None:
+    def __init__(
+        self,
+        network: PropagatorNetwork,
+        variables: list[Cell] | None = None,
+        max_depth: int = 100,
+    ) -> None:
         self.network = network
+        self.variables = variables
         self.max_depth = max_depth
 
     def is_solved(self) -> bool:
         """Check if all cells in the network are non-bottom, determined, and contradiction-free."""
-        for cell in self.network.cells.values():
+        cells = self.variables if self.variables is not None else list(self.network.cells.values())
+        for cell in cells:
             val = cell.value
             if isinstance(val, (Bottom, Contradiction)):
                 return False
@@ -1373,7 +1405,8 @@ class ChoiceEngine:
         """Find an undetermined cell using First-Fail / MRV (Minimum Remaining Values) heuristic."""
         best_cell = None
         min_candidates = float("inf")
-        for cell in self.network.cells.values():
+        cells = self.variables if self.variables is not None else list(self.network.cells.values())
+        for cell in cells:
             val = cell.value
             if (
                 isinstance(val, DiscreteDomain)
@@ -1421,6 +1454,7 @@ class ChoiceEngine:
 
         for cand in candidates:
             # Restore state before trying candidate
+            self.network._queue.clear()
             for cid, val in saved_state.items():
                 self.network.cells[cid].value = val
 
@@ -1438,6 +1472,7 @@ class ChoiceEngine:
                 return True
 
         # Backtrack: restore saved state
+        self.network._queue.clear()
         for cid, val in saved_state.items():
             self.network.cells[cid].value = val
         return False
