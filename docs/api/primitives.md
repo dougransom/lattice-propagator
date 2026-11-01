@@ -23,5 +23,7 @@ Reactive containers, worklist fixed-point engine, and built-in constraint propag
         - SpatialZone
         - ThresholdPropagator
         - BoundedLinearPropagator
+        - TrajectorySegment
+        - TrajectoryEnvelopePropagator
         - AllDifferentPropagator
         - ChoiceEngine

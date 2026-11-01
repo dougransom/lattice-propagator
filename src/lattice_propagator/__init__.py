@@ -51,6 +51,8 @@ from .primitives import (
     SpatialZone,
     SwitchPropagator,
     ThresholdPropagator,
+    TrajectoryEnvelopePropagator,
+    TrajectorySegment,
     lift_propagator,
 )
 from .tms import (
@@ -106,6 +108,8 @@ __all__ = [
     "SpatialZone",
     "SwitchPropagator",
     "ThresholdPropagator",
+    "TrajectoryEnvelopePropagator",
+    "TrajectorySegment",
     "Translator",
     "TruthMaintenanceSystem",
     "format_lattice_value",

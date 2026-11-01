@@ -864,6 +864,253 @@ class LagPropagator(Propagator):
         self.step(dt=1.0)
 
 
+@dataclass(frozen=True)
+class TrajectorySegment:
+    """A distinct temporal segment in a piecewise trajectory envelope.
+
+    Defines the target interval bounds and transition dynamics over a temporal duration.
+
+    Attributes:
+        duration: Duration of this segment in seconds (or time units). Must be ≥ 0.
+        bounds: Target bounds (IntervalValue or scalar) reached at the end of this segment.
+        transition: Transition profile ("linear", "step", "smooth" / "cosine", "hold").
+        name: Optional descriptive label for this segment (e.g. "ramp_up", "soak", "decay").
+    """
+
+    duration: float
+    bounds: IntervalValue
+    transition: str = "linear"
+    name: str = ""
+
+    def __post_init__(self) -> None:
+        if self.duration < 0:
+            raise ValueError(f"duration must be non-negative, got {self.duration}")
+        if not isinstance(self.bounds, IntervalValue):
+            if isinstance(self.bounds, (int, float)):
+                object.__setattr__(
+                    self, "bounds", IntervalValue(float(self.bounds), float(self.bounds))
+                )
+            else:
+                raise TypeError(f"bounds must be IntervalValue or float, got {type(self.bounds)}")
+
+
+class TrajectoryEnvelopePropagator(Propagator):
+    """Piecewise trajectory envelope propagator for dynamic profiles and temporal bounds.
+
+    Maps elapsed time Δt from a time cell through a sequence of trajectory segments
+    to continuously evaluate an output interval envelope [y_min(t), y_max(t)].
+    Optionally modulated by an enable cell (for activation gating) and an output
+    phase cell (identifying the active segment name).
+
+    Useful for:
+    - Signal Temporal Logic (STL) specification envelopes: [y_lo(t), y_hi(t)]
+    - Industrial thermal / process control profiles (ramp-soak schedules)
+    - Motion control trajectory bounds and velocity profiles
+    - Circadian lighting and temperature curves
+    - Multi-stage synthesizer envelope generators (ADSR / breakpoint envelopes)
+    """
+
+    def __init__(
+        self,
+        name: str,
+        time_cell: Cell,
+        output_cell: Cell,
+        segments: list[TrajectorySegment],
+        enable_cell: Cell | None = None,
+        phase_cell: Cell | None = None,
+        initial_bounds: IntervalValue | float | None = None,
+        clamp_bounds: IntervalValue | None = None,
+        loop: bool = False,
+    ) -> None:
+        """Initialize the trajectory envelope propagator.
+
+        Args:
+            name: Identifier for this propagator.
+            time_cell: Reactive Cell carrying elapsed time Δt (FlatValue or IntervalValue).
+            output_cell: Output Cell receiving the evaluated IntervalValue envelope.
+            segments: Ordered list of TrajectorySegment instances defining the profile.
+            enable_cell: Optional Cell gating activation (DiscreteDomain or FlatValue).
+            phase_cell: Optional Cell receiving the active segment name as a DiscreteDomain.
+            initial_bounds: Starting bounds at t=0. Defaults to segments[0].bounds if None.
+            clamp_bounds: Optional envelope boundary to clamp all evaluated intervals.
+            loop: If True, wraps time modulo total duration. If False, holds final segment bounds.
+        """
+        if not segments:
+            raise ValueError("TrajectoryEnvelopePropagator requires at least one TrajectorySegment")
+
+        inputs = [time_cell]
+        if enable_cell is not None:
+            inputs.append(enable_cell)
+
+        outputs = [output_cell]
+        if phase_cell is not None:
+            outputs.append(phase_cell)
+
+        super().__init__(name, inputs, outputs)
+        self.time_cell = time_cell
+        self.output_cell = output_cell
+        self.segments = segments
+        self.enable_cell = enable_cell
+        self.phase_cell = phase_cell
+        self.loop = loop
+        self.clamp_bounds = clamp_bounds
+
+        if initial_bounds is None:
+            self.initial_bounds = segments[0].bounds
+        elif isinstance(initial_bounds, (int, float)):
+            self.initial_bounds = IntervalValue(float(initial_bounds), float(initial_bounds))
+        elif isinstance(initial_bounds, IntervalValue):
+            self.initial_bounds = initial_bounds
+        else:
+            raise TypeError(
+                f"initial_bounds must be IntervalValue or float, got {type(initial_bounds)}"
+            )
+
+        self.total_duration = sum(max(0.0, s.duration) for s in self.segments)
+
+    def is_active(self) -> bool:
+        """Check whether the propagator is currently active."""
+        if self.enable_cell is None:
+            return True
+        val = self.enable_cell.value
+        if isinstance(val, (Bottom, Contradiction)):
+            return False
+        if isinstance(val, DiscreteDomain):
+            return val.value not in (False, "off", 0, "inactive", None, "false")
+        if isinstance(val, FlatValue):
+            return bool(val.val)
+        return True
+
+    def set_time(self, t: float) -> None:
+        """Set the time cell to a scalar timestamp."""
+        self.time_cell.set_value(FlatValue(float(t)), source=self.name, overwrite=True)
+
+    def step(self, dt: float) -> None:
+        """Advance time cell by dt seconds."""
+        cur_t = 0.0
+        val = self.time_cell.value
+        if isinstance(val, FlatValue) and isinstance(val.val, (int, float)):
+            cur_t = float(val.val)
+        elif isinstance(val, IntervalValue):
+            cur_t = float(val.center)
+        self.set_time(cur_t + max(0.0, dt))
+
+    def _locate_segment(self, t: float) -> tuple[TrajectorySegment, IntervalValue, float]:
+        """Locate active segment, previous boundary bounds, and segment start timestamp."""
+        if self.loop and self.total_duration > 0:
+            effective_t = t % self.total_duration
+        else:
+            effective_t = max(0.0, t)
+
+        accum = 0.0
+        active_seg = self.segments[-1]
+        phase_start = 0.0
+        prev_bounds = self.segments[-2].bounds if len(self.segments) > 1 else self.initial_bounds
+
+        for i, seg in enumerate(self.segments):
+            dur = max(0.0, seg.duration)
+            end_t = accum + dur
+            if effective_t < end_t or i == len(self.segments) - 1:
+                active_seg = seg
+                phase_start = accum
+                prev_bounds = self.initial_bounds if i == 0 else self.segments[i - 1].bounds
+                break
+            accum = end_t
+
+        return active_seg, prev_bounds, phase_start
+
+    def _interpolate_progress(self, u: float, transition: str) -> float:
+        """Compute transition progress factor in [0.0, 1.0]."""
+        match transition.lower():
+            case "linear":
+                return u
+            case "smooth" | "cosine":
+                return (1.0 - math.cos(math.pi * u)) / 2.0
+            case "step":
+                return 1.0
+            case "hold":
+                return 0.0 if u < 1.0 else 1.0
+            case _:
+                return u
+
+    def evaluate_at(self, t: float) -> IntervalValue:
+        """Evaluate the trajectory envelope interval bounds at timestamp t."""
+        if not self.segments:
+            return self.initial_bounds
+
+        effective_t = (t % self.total_duration) if (self.loop and self.total_duration > 0) else t
+
+        if effective_t <= 0.0:
+            res = self.initial_bounds
+        elif not self.loop and effective_t >= self.total_duration:
+            res = self.segments[-1].bounds
+        else:
+            seg, prev_bounds, phase_start = self._locate_segment(effective_t)
+            dur = max(seg.duration, 1e-9)
+            u = min(1.0, max(0.0, (effective_t - phase_start) / dur))
+            p = self._interpolate_progress(u, seg.transition)
+            cur_min = prev_bounds.min_val + p * (seg.bounds.min_val - prev_bounds.min_val)
+            cur_max = prev_bounds.max_val + p * (seg.bounds.max_val - prev_bounds.max_val)
+            res = IntervalValue(min_val=cur_min, max_val=cur_max)
+
+        if self.clamp_bounds is not None:
+            clamped = res.clamp(self.clamp_bounds)
+            if isinstance(clamped, IntervalValue):
+                res = clamped
+        return res
+
+    def segment_at(self, t: float) -> TrajectorySegment:
+        """Retrieve the active segment at timestamp t."""
+        effective_t = (
+            (t % self.total_duration) if (self.loop and self.total_duration > 0) else max(0.0, t)
+        )
+        seg, _, _ = self._locate_segment(effective_t)
+        return seg
+
+    def alert(self, network: PropagatorNetwork) -> None:
+        """Propagate updated envelope bounds when time or enable cells change."""
+        if not self.is_active():
+            if self.output_cell.value != BOTTOM:
+                self.output_cell.set_value(BOTTOM, source=self.name, overwrite=True)
+            if self.phase_cell is not None and self.phase_cell.value != BOTTOM:
+                self.phase_cell.set_value(BOTTOM, source=self.name, overwrite=True)
+            return
+
+        t_val = self.time_cell.value
+        if isinstance(t_val, (Bottom, Contradiction)):
+            return
+
+        if isinstance(t_val, FlatValue) and isinstance(t_val.val, (int, float)):
+            t = float(t_val.val)
+            bounds = self.evaluate_at(t)
+            seg = self.segment_at(t)
+        elif isinstance(t_val, GaussianValue):
+            t = float(t_val.mean)
+            bounds = self.evaluate_at(t)
+            seg = self.segment_at(t)
+        elif isinstance(t_val, IntervalValue):
+            b1 = self.evaluate_at(t_val.min_val)
+            b2 = self.evaluate_at(t_val.max_val)
+            bounds = IntervalValue(min(b1.min_val, b2.min_val), max(b1.max_val, b2.max_val))
+            seg = self.segment_at(t_val.max_val)
+        else:
+            return
+
+        just = Justification(
+            rule_name=self.__class__.__name__,
+            antecedents=tuple(c.cell_id for c in self.inputs),
+            parameters={"segment": seg.name or "active"},
+        )
+        self.output_cell.set_value(bounds, source=self.name, overwrite=True, justification=just)
+        if self.phase_cell is not None and seg.name:
+            self.phase_cell.set_value(
+                DiscreteDomain.single(seg.name),
+                source=self.name,
+                overwrite=True,
+                justification=just,
+            )
+
+
 class KalmanEstimatorPropagator(Propagator):
     """Linear 2-State Kalman Filter Propagator.
 

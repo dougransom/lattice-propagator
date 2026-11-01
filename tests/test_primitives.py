@@ -3,8 +3,10 @@
 import math
 
 from lattice_propagator.lattice import (
+    BOTTOM,
     Contradiction,
     DiscreteDomain,
+    FlatValue,
     GaussianValue,
     IntervalValue,
 )
@@ -17,6 +19,8 @@ from lattice_propagator.primitives import (
     PropagatorNetwork,
     RatePropagator,
     ThresholdPropagator,
+    TrajectoryEnvelopePropagator,
+    TrajectorySegment,
 )
 
 
@@ -396,3 +400,182 @@ def test_kalman_estimator_network_reactive_alert():
     kf.reset(x=10.0, v=2.0)
     assert kf.x == 10.0
     assert kf.v == 2.0
+
+
+def test_trajectory_segment_validation():
+    """Verify TrajectorySegment validation, duration checks, and scalar promotion."""
+    seg1 = TrajectorySegment(duration=10.0, bounds=IntervalValue(0.0, 100.0), name="ramp")
+    assert seg1.duration == 10.0
+    assert seg1.bounds == IntervalValue(0.0, 100.0)
+    assert seg1.transition == "linear"
+
+    # Scalar bounds promotion to IntervalValue
+    seg2 = TrajectorySegment(duration=5.0, bounds=50.0, transition="step", name="hold")
+    assert seg2.bounds == IntervalValue(50.0, 50.0)
+
+    try:
+        TrajectorySegment(duration=-1.0, bounds=IntervalValue(0.0, 1.0))
+        assert False, "Negative duration should raise ValueError"
+    except ValueError:
+        pass
+
+
+def test_trajectory_envelope_propagator_linear_ramp():
+    """Verify multi-segment linear interpolation and holding final values."""
+    net = PropagatorNetwork("LinearTrajectory")
+    time_cell = net.add_cell("Time", FlatValue(0.0))
+    target_cell = net.add_cell("Target")
+    phase_cell = net.add_cell("Phase")
+
+    # 0s -> 30s: 100 down to 0; 30s -> 40s: hold at 0
+    segments = [
+        TrajectorySegment(
+            duration=30.0, bounds=IntervalValue(0.0, 0.0), transition="linear", name="fade_out"
+        ),
+        TrajectorySegment(
+            duration=10.0, bounds=IntervalValue(0.0, 0.0), transition="hold", name="hold_off"
+        ),
+    ]
+    p = TrajectoryEnvelopePropagator(
+        "SceneFade",
+        time_cell=time_cell,
+        output_cell=target_cell,
+        segments=segments,
+        initial_bounds=IntervalValue(100.0, 100.0),
+        phase_cell=phase_cell,
+    )
+    net.add_propagator(p)
+
+    # t = 0s -> 100.0
+    net.run()
+    assert target_cell.value == IntervalValue(100.0, 100.0)
+    assert phase_cell.value == DiscreteDomain.single("fade_out")
+
+    # t = 15s -> 50.0
+    p.set_time(15.0)
+    net.run()
+    val_15 = target_cell.value
+    assert isinstance(val_15, IntervalValue)
+    assert math.isclose(val_15.min_val, 50.0, abs_tol=1e-3)
+    assert math.isclose(val_15.max_val, 50.0, abs_tol=1e-3)
+
+    # t = 30s -> 0.0
+    p.set_time(30.0)
+    net.run()
+    val_30 = target_cell.value
+    assert isinstance(val_30, IntervalValue)
+    assert math.isclose(val_30.min_val, 0.0, abs_tol=1e-3)
+
+    # t = 50s (> 40s total duration) -> holds final 0.0
+    p.set_time(50.0)
+    net.run()
+    assert target_cell.value == IntervalValue(0.0, 0.0)
+    assert phase_cell.value == DiscreteDomain.single("hold_off")
+
+
+def test_trajectory_envelope_propagator_smooth_and_step():
+    """Verify smooth cosine S-curve easing and step transitions."""
+    net = PropagatorNetwork("SmoothAndStep")
+    time_cell = net.add_cell("Time", FlatValue(0.0))
+    target_cell = net.add_cell("Target")
+
+    segments = [
+        TrajectorySegment(
+            duration=10.0, bounds=IntervalValue(100.0, 100.0), transition="smooth", name="s_curve"
+        ),
+        TrajectorySegment(
+            duration=5.0, bounds=IntervalValue(200.0, 200.0), transition="step", name="step_jump"
+        ),
+    ]
+    p = TrajectoryEnvelopePropagator(
+        "SmoothProp",
+        time_cell=time_cell,
+        output_cell=target_cell,
+        segments=segments,
+        initial_bounds=IntervalValue(0.0, 0.0),
+    )
+    net.add_propagator(p)
+
+    # At midpoint t=5s of 10s smooth ramp: (1 - cos(pi * 0.5)) / 2 = 0.5 -> 50.0
+    p.set_time(5.0)
+    net.run()
+    val_5 = target_cell.value
+    assert isinstance(val_5, IntervalValue)
+    assert math.isclose(val_5.min_val, 50.0, abs_tol=1e-3)
+
+    # In step transition segment (t=12s): jumps immediately to 200.0
+    p.set_time(12.0)
+    net.run()
+    assert target_cell.value == IntervalValue(200.0, 200.0)
+
+
+def test_trajectory_envelope_propagator_enable_and_retraction():
+    """Verify enable gating and automatic retraction to BOTTOM when deactivated."""
+    net = PropagatorNetwork("EnableGating")
+    time_cell = net.add_cell("Time", FlatValue(5.0))
+    enable_cell = net.add_cell("Enable", DiscreteDomain.single(True))
+    target_cell = net.add_cell("Target")
+    phase_cell = net.add_cell("Phase")
+
+    segments = [TrajectorySegment(duration=10.0, bounds=IntervalValue(100.0, 100.0), name="ramp")]
+    p = TrajectoryEnvelopePropagator(
+        "GatedProp",
+        time_cell=time_cell,
+        output_cell=target_cell,
+        segments=segments,
+        enable_cell=enable_cell,
+        phase_cell=phase_cell,
+        initial_bounds=IntervalValue(0.0, 0.0),
+    )
+    net.add_propagator(p)
+
+    # Active
+    net.run()
+    assert target_cell.value == IntervalValue(50.0, 50.0)
+    assert phase_cell.value == DiscreteDomain.single("ramp")
+
+    # Deactivate -> retacts to BOTTOM
+    enable_cell.set_value(DiscreteDomain.single(False), overwrite=True)
+    net.run()
+    assert target_cell.value == BOTTOM
+    assert phase_cell.value == BOTTOM
+
+    # Reactivate
+    enable_cell.set_value(DiscreteDomain.single(True), overwrite=True)
+    net.run()
+    assert target_cell.value == IntervalValue(50.0, 50.0)
+
+
+def test_trajectory_envelope_interval_time_and_loop():
+    """Verify envelope evaluation under uncertain interval time and loop mode."""
+    net = PropagatorNetwork("IntervalTimeAndLoop")
+    time_cell = net.add_cell("Time")
+    target_cell = net.add_cell("Target")
+
+    # Total duration = 20s
+    segments = [
+        TrajectorySegment(duration=10.0, bounds=IntervalValue(100.0, 100.0), transition="linear"),
+        TrajectorySegment(duration=10.0, bounds=IntervalValue(0.0, 0.0), transition="linear"),
+    ]
+    p = TrajectoryEnvelopePropagator(
+        "LoopingProp",
+        time_cell=time_cell,
+        output_cell=target_cell,
+        segments=segments,
+        initial_bounds=IntervalValue(0.0, 0.0),
+        loop=True,
+    )
+    net.add_propagator(p)
+
+    # t = 25s with loop -> 25 % 20 = 5s (halfway through first segment -> 50.0)
+    time_cell.set_value(FlatValue(25.0))
+    net.run()
+    assert math.isclose(target_cell.value.min_val, 50.0, abs_tol=1e-3)
+
+    # Time interval [2.0, 8.0] -> bounds [20.0, 80.0]
+    time_cell.set_value(IntervalValue(2.0, 8.0), overwrite=True)
+    net.run()
+    res = target_cell.value
+    assert isinstance(res, IntervalValue)
+    assert math.isclose(res.min_val, 20.0, abs_tol=1e-3)
+    assert math.isclose(res.max_val, 80.0, abs_tol=1e-3)
