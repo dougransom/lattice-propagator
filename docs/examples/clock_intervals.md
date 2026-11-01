@@ -160,3 +160,113 @@ assert delivered_power.value == IntervalValue(0.0, 0.0)
 min_energy = corridor.length * delivered_power.value.min_val
 print(f"\nTotal Potential Energy Delivered during Corridor: {6.0 * 7.2:.1f} kWh")
 ```
+
+---
+
+## 5. Architectural Comparison: Traditional Python vs. Lattice Propagator
+
+### 5.1 Why Traditional Code Struggles with Midnight
+
+In standard Python, time-of-day is represented as scalar numbers on a flat linear axis $[0.0, 24.0)$. Because the line has an artificial boundary seam at midnight ($24.0 \equiv 0.0$), an overnight window like $23:00 \rightarrow 07:00$ cannot be written as $[23.0, 7.0]$ without violating the invariant $start \le end$.
+
+To compute the intersection of multiple overlapping overnight schedules, traditional imperative code must:
+1. **Split at midnight:** Dissect wrapping windows into pairs of linear intervals ($[23.0, 7.0] \rightarrow [23.0, 24.0) \cup [0.0, 7.0)$).
+2. **Combinatorial intersection:** Perform pairwise Cartesian intersection across all fragments.
+3. **Re-stitching:** Detect if leftover pieces meet across the $24.0 / 0.0$ boundary and fuse them back into a single interval.
+4. **Silent failure:** Return an empty list `[]` when schedules conflict, losing all information about *which* rules clashed.
+
+In contrast, [`CircularInterval`](file:///home/doug/code/lattice-propagator/docs/api/lattice.md) treats time as an intrinsic 1-sphere circle $S^1 / (24 \times \mathbb{Z})$ where midnight is just another point on the dial.
+
+### 5.2 Side-by-Side Executable Code Comparison
+
+```python
+import math
+from lattice_propagator import CircularInterval, PropagatorNetwork
+
+
+# ==============================================================================
+# Approach A: Traditional Imperative Python (~35 lines of piecewise splitting)
+# ==============================================================================
+def intersect_windows_traditional(windows: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Traditional imperative approach: split each window at midnight, intersect pieces, and re-stitch."""
+    # Step 1: Split wrapping windows across the artificial 24.0 seam
+    split_pieces: list[list[tuple[float, float]]] = []
+    for s, e in windows:
+        if s <= e:
+            split_pieces.append([(s, e)])
+        else:
+            split_pieces.append([(s, 24.0), (0.0, e)])
+
+    # Step 2: Intersect piecewise fragments iteratively
+    def intersect_two(
+        list_a: list[tuple[float, float]], list_b: list[tuple[float, float]]
+    ) -> list[tuple[float, float]]:
+        result = []
+        for a_s, a_e in list_a:
+            for b_s, b_e in list_b:
+                start, end = max(a_s, b_s), min(a_e, b_e)
+                if start < end:
+                    result.append((start, end))
+        return result
+
+    current = split_pieces[0]
+    for nxt in split_pieces[1:]:
+        current = intersect_two(current, nxt)
+
+    # Step 3: Re-stitch pieces that meet across the midnight boundary
+    head = next((w for w in current if math.isclose(w[1], 24.0)), None)
+    tail = next((w for w in current if math.isclose(w[0], 0.0)), None)
+    if head and tail:
+        others = [w for w in current if w not in (head, tail)]
+        return [(head[0], tail[1])] + others
+    return current
+
+
+# ==============================================================================
+# Approach B: Lattice Propagator (4 declarative lines)
+# ==============================================================================
+def intersect_windows_propagator(
+    policies: list[tuple[str, float, float]],
+) -> CircularInterval:
+    net_comp = PropagatorNetwork("ComparisonNet")
+    corridor_cell = net_comp.add_cell("corridor")
+    for source_name, start, end in policies:
+        corridor_cell.set_value(
+            CircularInterval(start, end, modulus=24.0),
+            source=source_name,
+        )
+    return corridor_cell.value
+
+
+# ==============================================================================
+# Verification: Both produce identical results, but with vastly different complexity
+# ==============================================================================
+policy_inputs = [
+    ("tariff", 23.0, 7.0),  # 23:00 to 07:00 (wraps midnight)
+    ("presence", 21.5, 6.5),  # 21:30 to 06:30 (wraps midnight)
+    ("grid", 0.5, 18.0),  # 00:30 to 18:00
+]
+
+# Run Traditional
+trad_inputs = [(s, e) for _, s, e in policy_inputs]
+trad_result = intersect_windows_traditional(trad_inputs)
+print(f"Traditional Python Result: {trad_result}")
+assert trad_result == [(0.5, 6.5)]
+
+# Run Propagator
+prop_result = intersect_windows_propagator(policy_inputs)
+print(f"Lattice Propagator Result: {prop_result}")
+assert isinstance(prop_result, CircularInterval)
+assert (prop_result.start, prop_result.end) == (0.5, 6.5)
+```
+
+### 5.3 Comparison Summary
+
+| Dimension | Traditional Imperative Python | Lattice Propagator (`CircularInterval`) |
+| :--- | :--- | :--- |
+| **Topology** | Flat Euclidean $[0, 24)$ with artificial discontinuity at midnight | Intrinsic circle $S^1 / (24\mathbb{Z})$ (no branch cut seam) |
+| **Code Volume** | ~35 lines of piecewise splitting, combinatorics, and re-stitching | 4 declarative lines using pure semilattice $\sqcap$ merge |
+| **Algebraic Monotonicity** | Order-dependent; fragile when rules are added/removed dynamically | Mathematically commutative, associative, and idempotent |
+| **Provenance & Explainability** | Returns `[]` on contradiction with zero explanation of *why* | Tracks causal history (`cell.explain()`) pinpointing conflicting policies |
+| **Reactive Integration** | Requires manual callbacks, poller loops, and re-running from scratch | Reactive cells trigger downstream propagators ([`SwitchPropagator`](file:///home/doug/code/lattice-propagator/docs/api/primitives.md)) automatically |
+
