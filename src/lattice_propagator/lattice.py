@@ -18,8 +18,9 @@ Implements mathematical partial orders:
 from __future__ import annotations
 
 import math
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -163,6 +164,30 @@ class IntervalValue(LatticeValue):
 
     def __rmul__(self, other: Any) -> IntervalValue:
         return self.__mul__(other)
+
+    def __truediv__(self, other: Any) -> IntervalValue:
+        if isinstance(other, IntervalValue):
+            if other.contains(0.0):
+                raise ZeroDivisionError(
+                    f"Cannot divide interval by interval containing zero: {other}"
+                )
+            recip = IntervalValue(1.0 / other.max_val, 1.0 / other.min_val)
+            return self * recip
+        if isinstance(other, (int, float)):
+            if other == 0:
+                raise ZeroDivisionError("Cannot divide interval by zero")
+            if other > 0:
+                return IntervalValue(self.min_val / other, self.max_val / other)
+            return IntervalValue(self.max_val / other, self.min_val / other)
+        return NotImplemented
+
+    def __rtruediv__(self, other: Any) -> IntervalValue:
+        if isinstance(other, (int, float)):
+            if self.contains(0.0):
+                raise ZeroDivisionError(f"Cannot divide by interval containing zero: {self}")
+            recip = IntervalValue(1.0 / self.max_val, 1.0 / self.min_val)
+            return IntervalValue(float(other), float(other)) * recip
+        return NotImplemented
 
     def __repr__(self) -> str:
         return f"[{self.min_val:.3f}, {self.max_val:.3f}]"
@@ -365,6 +390,70 @@ class DiscreteDomain(LatticeValue):
         return f"Discrete{{{', '.join(map(str, sorted_cands))}}}"
 
 
+@dataclass(frozen=True)
+class FlatValue(LatticeValue):
+    """A flat lattice value wrapping any scalar/immutable value (bool, str, int, float, enum).
+
+    Lattice ordering:
+      Bottom <= FlatValue(v) <= Contradiction
+      FlatValue(v1) ⊔ FlatValue(v2) = FlatValue(v1) if v1 == v2 else Contradiction
+    """
+
+    val: Any
+
+    def __repr__(self) -> str:
+        return f"Flat({self.val!r})"
+
+
+@dataclass(frozen=True)
+class SetLattice(LatticeValue):
+    """Monotonically accumulating set lattice under set union.
+
+    Lattice ordering:
+      Bottom <= SetLattice(elements)
+      SetLattice(s1) ⊔ SetLattice(s2) = SetLattice(s1 ∪ s2)
+    """
+
+    elements: frozenset[Any] = field(default_factory=frozenset)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.elements, frozenset):
+            object.__setattr__(self, "elements", frozenset(self.elements))
+
+    @classmethod
+    def from_iterable(cls, items: Iterable[Any]) -> SetLattice:
+        """Create a SetLattice from an iterable of elements."""
+        return cls(elements=frozenset(items))
+
+    def __contains__(self, item: Any) -> bool:
+        return item in self.elements
+
+    def __len__(self) -> int:
+        return len(self.elements)
+
+    def __repr__(self) -> str:
+        try:
+            items = sorted(str(x) for x in self.elements)
+        except TypeError:
+            items = [str(x) for x in self.elements]
+        return f"SetLattice{{{', '.join(items)}}}"
+
+
+@dataclass(frozen=True)
+class MapLattice(LatticeValue):
+    """Monotonically merging key-value mapping lattice.
+
+    Union of keys; overlapping keys are merged recursively via merge_lattice.
+    If any key merge results in a Contradiction, the entire map becomes a Contradiction.
+    """
+
+    mapping: dict[Any, LatticeValue] = field(default_factory=dict)
+
+    def __repr__(self) -> str:
+        pairs = [f"{k}: {v}" for k, v in self.mapping.items()]
+        return f"MapLattice{{{', '.join(pairs)}}}"
+
+
 BOTTOM = Bottom()
 
 
@@ -501,12 +590,47 @@ def _merge_discrete_domains(a: DiscreteDomain, b: DiscreteDomain) -> LatticeValu
     return DiscreteDomain(candidates=new_candidates)
 
 
+def _merge_flat_values(a: FlatValue, b: FlatValue) -> LatticeValue:
+    """Compute monotonic join of two flat scalar values."""
+    if a.val == b.val:
+        return a
+    return Contradiction(
+        reason=f"Conflicting flat values: {a.val!r} vs {b.val!r}",
+        conflicting_values=(a, b),
+    )
+
+
+def _merge_set_lattices(a: SetLattice, b: SetLattice) -> LatticeValue:
+    """Compute set union of two accumulating set lattices."""
+    return SetLattice(elements=a.elements | b.elements)
+
+
+def _merge_map_lattices(a: MapLattice, b: MapLattice) -> LatticeValue:
+    """Compute recursive key-wise monotonic join of two mapping lattices."""
+    merged_dict: dict[Any, LatticeValue] = dict(a.mapping)
+    for k, v_b in b.mapping.items():
+        if k in merged_dict:
+            res = merge_lattice(merged_dict[k], v_b)
+            if isinstance(res, Contradiction):
+                return Contradiction(
+                    reason=f"Key conflict on {k!r}: {res.reason}",
+                    conflicting_values=(merged_dict[k], v_b),
+                )
+            merged_dict[k] = res
+        else:
+            merged_dict[k] = v_b
+    return MapLattice(mapping=merged_dict)
+
+
 MERGE_DISPATCH: dict[type, Callable[[Any, Any], LatticeValue]] = {
     GaussianValue: _merge_gaussians,
     IntervalValue: _merge_intervals,
     CircularInterval: _merge_circular_intervals,
     OrderedInterval: _merge_ordered_intervals,
     DiscreteDomain: _merge_discrete_domains,
+    FlatValue: _merge_flat_values,
+    SetLattice: _merge_set_lattices,
+    MapLattice: _merge_map_lattices,
 }
 
 

@@ -2,7 +2,7 @@
 
 import math
 
-from lattice_propagator.lattice import GaussianValue
+from lattice_propagator.lattice import GaussianValue, IntervalValue
 from lattice_propagator.tms import TruthMaintenanceSystem
 
 
@@ -89,3 +89,137 @@ def test_tms_mermaid_generation() -> None:
     assert "graph LR" in mermaid
     assert "sensor_thermostat" in mermaid
     assert "OFFLINE" in mermaid
+
+
+def test_tms_unitless_default() -> None:
+    """Verify that omitting units defaults to dimensionless pure numbers without assuming °C."""
+    tms = TruthMaintenanceSystem(cell_id="speed_ratio")
+    tms.assert_evidence("sensor.ratio_a", GaussianValue(mean=1.5, variance=0.01))
+    tms.assert_evidence("sensor.ratio_b", GaussianValue(mean=1.7, variance=0.01))
+
+    explanation = tms.explain()
+    assert "°C" not in explanation
+    assert "Combining ratio_a (1.5), ratio_b (1.7) into 1.6" in explanation
+
+
+def test_tms_custom_engineering_units() -> None:
+    """Verify domain-agnostic custom engineering units (e.g. m/s, W, $/kWh)."""
+    tms = TruthMaintenanceSystem(cell_id="velocity", unit=" m/s")
+    tms.assert_evidence("sensor.gps_vel", IntervalValue(12.0, 15.0))
+    tms.assert_evidence("sensor.imu_vel", IntervalValue(13.0, 16.0))
+
+    explanation = tms.explain()
+    assert (
+        "Intersecting gps_vel [12.0, 15.0] m/s, imu_vel [13.0, 16.0] m/s into [13.0, 15.0] m/s."
+        == explanation
+    )
+
+
+def test_tms_interval_explanation() -> None:
+    """Test explanation of interval bounding intersections."""
+    tms = TruthMaintenanceSystem(cell_id="comfort_band", unit="°C")
+    tms.assert_evidence("policy.user_comfort", IntervalValue(19.0, 23.0))
+    tms.assert_evidence("rule.solar_upper_bound", IntervalValue(20.5, 25.0))
+
+    explanation = tms.explain()
+    assert "Intersecting" in explanation
+    assert "policy.user_comfort [19.0, 23.0]°C" in explanation
+    assert "rule.solar_upper_bound [20.5, 25.0]°C" in explanation
+    assert "[20.5, 23.0]°C" in explanation
+
+
+def test_tms_discrete_domain_explanation() -> None:
+    """Test explanation of DiscreteDomain possibility reductions."""
+    from lattice_propagator.lattice import DiscreteDomain
+
+    tms = TruthMaintenanceSystem(cell_id="hvac_candidates")
+    tms.assert_evidence("season_rule", DiscreteDomain({"heat", "fan_only"}))
+    tms.assert_evidence("occupancy_rule", DiscreteDomain({"heat", "cool"}))
+
+    explanation = tms.explain()
+    assert "Constrained candidate states from" in explanation
+    assert "{heat}" in explanation
+
+
+def test_tms_contradiction_actionable_diagnostic() -> None:
+    """Test that contradictions produce actionable diagnostics with DDB retraction advice."""
+    from lattice_propagator.lattice import FlatValue
+
+    tms = TruthMaintenanceSystem(cell_id="heater_power")
+    # Ground truth (non-defeasible)
+    tms.assert_evidence("physical_switch", FlatValue("off"), is_assumption=False)
+    # Defeasible assumption
+    tms.assert_evidence(
+        "occupancy_automation",
+        FlatValue("on"),
+        is_assumption=True,
+        confidence=0.65,
+    )
+
+    explanation = tms.explain()
+    assert "Contradiction detected on heater_power" in explanation
+    assert "physical_switch=off (ground, conf=1.00)" in explanation
+    assert "occupancy_automation=on (assumption, conf=0.65)" in explanation
+    assert (
+        "Recommendation: Retract assumption 'occupancy_automation' (confidence=0.65)."
+        in explanation
+    )
+
+
+def test_multihop_causal_explanation() -> None:
+    """Test multi-hop causal provenance traversal across propagators."""
+    from lattice_propagator.primitives import (
+        ArithmeticPropagator,
+        PropagatorNetwork,
+        ThresholdPropagator,
+    )
+
+    net = PropagatorNetwork("ClimateCascade")
+    t1 = net.add_cell("living_room_temp", unit="°C")
+    t2 = net.add_cell("hallway_temp", unit="°C")
+    avg_temp = net.add_cell("avg_temp", unit="°C")
+    heater_alert = net.add_cell("heater_alert")
+
+    # avg_temp = 0.5 * t1 + 0.5 * t2
+    net.add_propagator(
+        ArithmeticPropagator(
+            "AverageTemp",
+            inputs=[t1, t2],
+            output=avg_temp,
+            weights=[0.5, 0.5],
+        )
+    )
+
+    # heater_alert = True if avg_temp < 19.0
+    net.add_propagator(
+        ThresholdPropagator(
+            "HeaterTrigger",
+            input_cell=avg_temp,
+            output_bool_cell=heater_alert,
+            threshold=19.0,
+            below=True,
+        )
+    )
+
+    # Set sensors (cold readings)
+    t1.set_value(GaussianValue(mean=18.0, variance=0.1), source="sensor.t1")
+    t2.set_value(GaussianValue(mean=18.4, variance=0.1), source="sensor.t2")
+
+    # Propagate
+    net.run()
+
+    # Local explanation (depth=1) for heater_alert
+    local_explain = heater_alert.explain(depth=1)
+    assert "Deduced by ThresholdPropagator from avg_temp" in local_explain
+
+    # Multi-hop causal tree (depth=None)
+    causal_explain = net.explain("heater_alert", depth=None)
+    assert "Deduced by ThresholdPropagator from avg_temp" in causal_explain
+    assert "└── [ThresholdPropagator]" in causal_explain
+    assert (
+        "Deduced by ArithmeticPropagator from living_room_temp, hallway_temp: 18.2°C"
+        in causal_explain
+    )
+    assert "└── [ArithmeticPropagator]" in causal_explain
+    assert "Combining t1 (18.0°C) into 18.0°C" in causal_explain
+    assert "Combining t2 (18.4°C) into 18.4°C" in causal_explain

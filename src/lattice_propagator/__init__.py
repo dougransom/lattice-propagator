@@ -11,6 +11,7 @@ Primary Citations & Literature:
 2. Radul, A. (2009). "Propagation Networks: A Flexible and Expressive Substrate for Computation".
    Doctoral Dissertation, MIT. https://dspace.mit.edu/handle/1721.1/54635
 3. Hanson, C., & Sussman, G. J. (2021). "Software Design for Flexibility". MIT Press.
+   https://draugus.github.io/pdf/Software%20Design%20for%20Flexibility%20-%20Chris%20Hanson.pdf
 """
 
 from __future__ import annotations
@@ -29,63 +30,90 @@ from .lattice import (
     CircularInterval,
     Contradiction,
     DiscreteDomain,
+    FlatValue,
     GaussianValue,
     IntervalValue,
     LatticeValue,
+    MapLattice,
     OrderedInterval,
+    SetLattice,
     merge_lattice,
 )
 from .primitives import (
+    AdderPropagator,
     AllDifferentPropagator,
     ArithmeticPropagator,
     Cell,
+    ChoiceEngine,
+    ConditionalPropagator,
     DynamicScenePropagator,
     ElasticModulatorPropagator,
+    FunctionalPropagator,
     KalmanEstimatorPropagator,
     LagPropagator,
+    MultiplierPropagator,
     Propagator,
     PropagatorNetwork,
     RatePropagator,
     ScenePhase,
+    SwitchPropagator,
     ThresholdPropagator,
+    lift_propagator,
 )
-from .tms import Premise, TruthMaintenanceSystem
+from .tms import (
+    Assumption,
+    Justification,
+    NetworkTMS,
+    Premise,
+    TruthMaintenanceSystem,
+    format_lattice_value,
+)
 
 __version__ = "0.0.1dev1"
 
 __all__ = [
-    # Core Lattice Elements
     "BOTTOM",
+    "AdderPropagator",
+    "AllDifferentPropagator",
+    "ArithmeticPropagator",
+    "ArrivalEstimate",
+    "Assumption",
     "Bottom",
+    "Cell",
+    "ChoiceEngine",
+    "CircularInterval",
+    "ConditionalPropagator",
     "Contradiction",
-    "LatticeValue",
+    "DiscreteDomain",
+    "DynamicScenePropagator",
+    "ElasticModulatorPropagator",
+    "FlatValue",
+    "FunctionalPropagator",
+    "GPSFix",
     "GaussianValue",
     "IntervalValue",
+    "Justification",
+    "KalmanEstimatorPropagator",
+    "LagPropagator",
+    "LatticeValue",
+    "MapLattice",
+    "MultiplierPropagator",
+    "NetworkTMS",
     "OrderedInterval",
-    "CircularInterval",
-    "DiscreteDomain",
-    "merge_lattice",
-    # Propagators and Network
-    "Cell",
+    "Premise",
     "Propagator",
     "PropagatorNetwork",
-    "ArithmeticPropagator",
     "RatePropagator",
-    "LagPropagator",
-    "ElasticModulatorPropagator",
-    "ThresholdPropagator",
-    "DynamicScenePropagator",
     "ScenePhase",
-    "KalmanEstimatorPropagator",
-    "AllDifferentPropagator",
-    # Kinematics
-    "GPSFix",
+    "SetLattice",
+    "SwitchPropagator",
+    "ThresholdPropagator",
     "TransitMode",
-    "ArrivalEstimate",
+    "TruthMaintenanceSystem",
     "classify_transit_mode",
     "compute_arrival_estimate",
+    "format_lattice_value",
     "haversine_distance",
-    # TMS
-    "Premise",
-    "TruthMaintenanceSystem",
+    "lift_propagator",
+    "merge_lattice",
 ]
