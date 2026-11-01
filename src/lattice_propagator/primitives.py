@@ -881,6 +881,7 @@ class TrajectorySegment:
     bounds: IntervalValue
     transition: str = "linear"
     name: str = ""
+    custom_eval: Callable[[float], float] | None = None
 
     def __post_init__(self) -> None:
         if self.duration < 0:
@@ -1019,13 +1020,36 @@ class TrajectoryEnvelopePropagator(Propagator):
 
         return active_seg, prev_bounds, phase_start
 
-    def _interpolate_progress(self, u: float, transition: str) -> float:
+    def _interpolate_progress(self, u: float, seg: TrajectorySegment) -> float:
         """Compute transition progress factor in [0.0, 1.0]."""
-        match transition.lower():
+        if seg.custom_eval is not None:
+            try:
+                res = float(seg.custom_eval(u))
+                return min(1.0, max(0.0, res))
+            except (ValueError, TypeError, ArithmeticError):
+                pass
+
+        match seg.transition.lower():
             case "linear":
                 return u
             case "smooth" | "cosine":
                 return (1.0 - math.cos(math.pi * u)) / 2.0
+            case "sigmoid" | "logistic":
+                k = 10.0
+                s0 = 1.0 / (1.0 + math.exp(0.5 * k))
+                s1 = 1.0 / (1.0 + math.exp(-0.5 * k))
+                su = 1.0 / (1.0 + math.exp(-k * (u - 0.5)))
+                return (su - s0) / (s1 - s0)
+            case "tanh":
+                k = 3.0
+                t0 = math.tanh(-0.5 * k)
+                t1 = math.tanh(0.5 * k)
+                tu = math.tanh(k * (u - 0.5))
+                return (tu - t0) / (t1 - t0)
+            case "exponential" | "exp":
+                k = 4.0
+                denom = 1.0 - math.exp(-k)
+                return (1.0 - math.exp(-k * u)) / denom if denom != 0.0 else u
             case "step":
                 return 1.0
             case "hold":
@@ -1048,7 +1072,7 @@ class TrajectoryEnvelopePropagator(Propagator):
             seg, prev_bounds, phase_start = self._locate_segment(effective_t)
             dur = max(seg.duration, 1e-9)
             u = min(1.0, max(0.0, (effective_t - phase_start) / dur))
-            p = self._interpolate_progress(u, seg.transition)
+            p = self._interpolate_progress(u, seg)
             cur_min = prev_bounds.min_val + p * (seg.bounds.min_val - prev_bounds.min_val)
             cur_max = prev_bounds.max_val + p * (seg.bounds.max_val - prev_bounds.max_val)
             res = IntervalValue(min_val=cur_min, max_val=cur_max)

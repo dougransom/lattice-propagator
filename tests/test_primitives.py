@@ -14,6 +14,7 @@ from lattice_propagator.primitives import (
     AllDifferentPropagator,
     ArithmeticPropagator,
     BoundedLinearPropagator,
+    Cell,
     KalmanEstimatorPropagator,
     LagPropagator,
     PropagatorNetwork,
@@ -579,3 +580,45 @@ def test_trajectory_envelope_interval_time_and_loop():
     assert isinstance(res, IntervalValue)
     assert math.isclose(res.min_val, 20.0, abs_tol=1e-3)
     assert math.isclose(res.max_val, 80.0, abs_tol=1e-3)
+
+
+def test_trajectory_envelope_squishing_and_custom_functions():
+    """Verify sigmoid, tanh, exponential easing, and custom evaluation callables."""
+    time_cell = Cell("Time")
+    target_cell = Cell("Target")
+
+    # Sigmoid transition
+    seg_sigmoid = TrajectorySegment(duration=10.0, bounds=100.0, transition="sigmoid")
+    prop_sigmoid = TrajectoryEnvelopePropagator(
+        "SigmoidProp", time_cell, target_cell, [seg_sigmoid], initial_bounds=0.0
+    )
+    # At t=0 -> 0.0, t=5.0 -> 50.0, t=10.0 -> 100.0
+    assert math.isclose(prop_sigmoid.evaluate_at(0.0).center, 0.0, abs_tol=1e-3)
+    assert math.isclose(prop_sigmoid.evaluate_at(5.0).center, 50.0, abs_tol=1e-3)
+    assert math.isclose(prop_sigmoid.evaluate_at(10.0).center, 100.0, abs_tol=1e-3)
+
+    # Tanh transition
+    seg_tanh = TrajectorySegment(duration=10.0, bounds=100.0, transition="tanh")
+    prop_tanh = TrajectoryEnvelopePropagator(
+        "TanhProp", time_cell, target_cell, [seg_tanh], initial_bounds=0.0
+    )
+    assert math.isclose(prop_tanh.evaluate_at(0.0).center, 0.0, abs_tol=1e-3)
+    assert math.isclose(prop_tanh.evaluate_at(5.0).center, 50.0, abs_tol=1e-3)
+    assert math.isclose(prop_tanh.evaluate_at(10.0).center, 100.0, abs_tol=1e-3)
+
+    # Exponential transition
+    seg_exp = TrajectorySegment(duration=10.0, bounds=100.0, transition="exponential")
+    prop_exp = TrajectoryEnvelopePropagator(
+        "ExpProp", time_cell, target_cell, [seg_exp], initial_bounds=0.0
+    )
+    assert math.isclose(prop_exp.evaluate_at(0.0).center, 0.0, abs_tol=1e-3)
+    assert prop_exp.evaluate_at(5.0).center > 80.0  # Rapid initial rise
+    assert math.isclose(prop_exp.evaluate_at(10.0).center, 100.0, abs_tol=1e-3)
+
+    # Custom callable evaluation (e.g. quadratic curve u^2)
+    seg_custom = TrajectorySegment(duration=10.0, bounds=100.0, custom_eval=lambda u: u**2)
+    prop_custom = TrajectoryEnvelopePropagator(
+        "CustomProp", time_cell, target_cell, [seg_custom], initial_bounds=0.0
+    )
+    # At u=0.5 (t=5.0), u^2 = 0.25 -> 25.0
+    assert math.isclose(prop_custom.evaluate_at(5.0).center, 25.0, abs_tol=1e-3)
