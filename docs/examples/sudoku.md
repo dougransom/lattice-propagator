@@ -8,14 +8,14 @@ Because `AllDifferentPropagator` continuously performs **pairwise exclusion** an
 
 ---
 
-## 1. Building the Sudoku Network
+## Complete Executable Solver
 
 ```python
 from lattice_propagator import (
-    PropagatorNetwork,
-    DiscreteDomain,
     AllDifferentPropagator,
     Cell,
+    DiscreteDomain,
+    PropagatorNetwork,
 )
 
 
@@ -40,25 +40,21 @@ def build_sudoku_network() -> tuple[PropagatorNetwork, list[list[Cell]]]:
             net.add_propagator(AllDifferentPropagator(f"Box_{br + 1}_{bc + 1}", box_cells))
 
     return net, grid
-```
 
----
 
-## 2. Solving Monotonically
-
-```python
+# Instantiate the network
 net, grid = build_sudoku_network()
 
 puzzle = "003020600900305001001806400008102900700000008006708200002609500800203009005010300"
 
-# Load puzzle clues
+# Load initial clues into cells
 for i, ch in enumerate(puzzle):
     r, c = divmod(i, 9)
     val = int(ch)
     initial_domain = DiscreteDomain.single(val) if val != 0 else DiscreteDomain.range(1, 10)
     grid[r][c].set_value(initial_domain, overwrite=True)
 
-# Propagate constraints until fixed point:
+# Propagate constraints monotonically until fixed point:
 net.run()
 
 # Print solved board:

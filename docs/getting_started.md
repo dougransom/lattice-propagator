@@ -48,31 +48,30 @@ $$a + b = c$$
 
 ```python
 from lattice_propagator import (
-    Cell,
-    PropagatorNetwork,
-    FlatValue,
     AdderPropagator,
+    FlatValue,
+    PropagatorNetwork,
 )
 
 # 1. Instantiate the propagation network
-network = PropagatorNetwork()
+network = PropagatorNetwork("AdderExample")
 
 # 2. Create reactive cells
-a = Cell("a")
-b = Cell("b")
-c = Cell("c")
+a = network.add_cell("a")
+b = network.add_cell("b")
+c = network.add_cell("c")
 
-# 3. Attach an AdderPropagator constraint
-AdderPropagator(a, b, c, network=network)
+# 3. Attach an AdderPropagator constraint (a + b = c)
+network.add_propagator(AdderPropagator("Add_a_b_c", a, b, c))
 
 # 4. Add information to 'a' and 'b'
-a.add_content(FlatValue(10))
-b.add_content(FlatValue(25))
+a.set_value(FlatValue(10))
+b.set_value(FlatValue(25))
 
 # 5. Run the network to reach a fixed point
 network.run()
 
-print(c.content)  # FlatValue(35)
+print(c.value)  # Flat(35)
 ```
 
 ### Multi-Directional Deduction
@@ -80,18 +79,25 @@ print(c.content)  # FlatValue(35)
 Now, clear the cells or instantiate a new network, and provide $c$ and $b$ instead:
 
 ```python
-a2 = Cell("a2")
-b2 = Cell("b2")
-c2 = Cell("c2")
-AdderPropagator(a2, b2, c2, network=network)
+from lattice_propagator import (
+    AdderPropagator,
+    FlatValue,
+    PropagatorNetwork,
+)
+
+network = PropagatorNetwork("ReverseAdder")
+a2 = network.add_cell("a2")
+b2 = network.add_cell("b2")
+c2 = network.add_cell("c2")
+network.add_propagator(AdderPropagator("Add_a2_b2_c2", a2, b2, c2))
 
 # Provide total and one summand:
-c2.add_content(FlatValue(100))
-b2.add_content(FlatValue(40))
+c2.set_value(FlatValue(100))
+b2.set_value(FlatValue(40))
 
 network.run()
 
-print(a2.content)  # FlatValue(60) — Deduced automatically!
+print(a2.value)  # Flat(60) — Deduced automatically!
 ```
 
 ---
@@ -101,22 +107,22 @@ print(a2.content)  # FlatValue(60) — Deduced automatically!
 For rapid network construction, `Cell` overloads standard Python operators (`+`, `-`, `*`, `/`):
 
 ```python
-from lattice_propagator import Cell, PropagatorNetwork, FlatValue
+from lattice_propagator import FlatValue, PropagatorNetwork
 
-network = PropagatorNetwork()
+network = PropagatorNetwork("OverloadExample")
 
-x = Cell("x")
-y = Cell("y")
+x = network.add_cell("x")
+y = network.add_cell("y")
 
 # Creates an intermediate cell and attaches an AdderPropagator:
 z = x + y
 
 # Set values:
-x.add_content(FlatValue(7))
-y.add_content(FlatValue(14))
+x.set_value(FlatValue(7))
+y.set_value(FlatValue(14))
 network.run()
 
-print(z.content)  # FlatValue(21)
+print(z.value)  # Flat(21)
 ```
 
 ---

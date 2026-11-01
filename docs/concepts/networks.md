@@ -9,7 +9,7 @@ Propagator networks compute by reaching a **fixed point** across interconnected 
 A `Cell` is the communication channel and memory unit of a propagator network:
 
 - It holds a single `LatticeValue` (initially `Bottom`).
-- When `add_content(new_val)` is called, the cell merges `new_val` with its existing content.
+- When `set_value(new_val)` is called, the cell merges `new_val` with its existing content.
 - If the merged value represents a strict information gain ($x_{\text{old}} \sqsubset x_{\text{new}}$), all connected propagators are enqueued for execution.
 - If the merged value is identical to what the cell already knows, no propagators are triggered (**idempotence preventing infinite loops**).
 
@@ -17,10 +17,10 @@ A `Cell` is the communication channel and memory unit of a propagator network:
 from lattice_propagator import Cell, FlatValue
 
 temp_cell = Cell("living_room_temp")
-print(temp_cell.content)  # ⊥(Bottom)
+print(temp_cell.value)  # ⊥(Bottom)
 
-temp_cell.add_content(FlatValue(21.5))
-print(temp_cell.content)  # FlatValue(21.5)
+temp_cell.set_value(FlatValue(21.5))
+print(temp_cell.value)  # Flat(21.5)
 ```
 
 ### Cell Unification (`cell_a.unify(cell_b)`)

@@ -20,45 +20,28 @@ Pioneered by **Gerald Jay Sussman** and **Alexey Radul** at MIT, propagator netw
 
 ```python
 from lattice_propagator import (
-    Cell,
     PropagatorNetwork,
-    FlatValue,
-    AdderPropagator,
-    MultiplierPropagator,
+    IntervalValue,
 )
 
-# 9 * C = 5 * (F - 32)
-# Set up reactive cells
-celsius = Cell("celsius")
-fahr = Cell("fahrenheit")
+# 1. Forward calculation: Celsius -> Fahrenheit (F = C * 1.8 + 32)
+net = PropagatorNetwork("TemperatureConversion")
+celsius = net.add_cell("celsius")
+fahrenheit = celsius * 1.8 + 32
 
-# Auxiliary cells and constants
-f_sub_32 = Cell("f - 32")
-const_32 = Cell("32", initial_value=FlatValue(32.0))
-const_9 = Cell("9", initial_value=FlatValue(9.0))
-const_5 = Cell("5", initial_value=FlatValue(5.0))
-nine_c = Cell("9 * C")
-five_f_sub_32 = Cell("5 * (F - 32)")
+celsius.set_value(IntervalValue(100.0, 100.0))
+net.run()
+print(f"100°C -> {fahrenheit.value.center}°F")  # Output: 212.0°F
 
-# Connect constraint propagators
-network = PropagatorNetwork()
-AdderPropagator(f_sub_32, const_32, fahr, network=network)  # (F - 32) + 32 = F
-MultiplierPropagator(celsius, const_9, nine_c, network=network)  # C * 9 = 9C
-MultiplierPropagator(f_sub_32, const_5, five_f_sub_32, network=network)  # (F - 32) * 5 = 5(F-32)
+# 2. Multi-directional backward deduction on the same network structure:
+net_rev = PropagatorNetwork("ReverseTemp")
+c_rev = net_rev.add_cell("celsius")
+f_rev = c_rev * 1.8 + 32
 
-# Unify the equal cells (9C == 5(F-32))
-nine_c.unify(five_f_sub_32)
-
-# Compute Fahrenheit from Celsius:
-celsius.add_content(FlatValue(100.0))
-network.run()
-print(f"100°C -> {fahr.content.value}°F")  # Output: 212.0°F
-
-# Or compute Celsius from Fahrenheit automatically:
-fahr_cell = Cell("f_new")
-celsius_cell = Cell("c_new")
-# Overloaded operators simplify network creation:
-# 9 * C = 5 * (F - 32)
+# Set Fahrenheit to freezing point (32°F):
+f_rev.set_value(IntervalValue(32.0, 32.0))
+net_rev.run()
+print(f"32°F -> {c_rev.value.center}°C")  # Output: 0.0°C (deduced automatically!)
 ```
 
 ---

@@ -42,32 +42,31 @@ $$\hat{x}_{k|k-1} = F x_{k-1} + B u, \quad P_{k|k-1} = F P_{k-1} F^T + Q$$
 
 ```python
 from lattice_propagator import (
-    PropagatorNetwork,
     GaussianValue,
     KalmanEstimatorPropagator,
+    PropagatorNetwork,
 )
 
 net = PropagatorNetwork("KalmanTracking")
 
-state_cell = net.add_cell("state", GaussianValue(mean=20.0, variance=1.0))
-measurement_cell = net.add_cell("measurement")
-output_cell = net.add_cell("estimated_state")
+meas = net.add_cell("Observation")
+state = net.add_cell("State")
+rate = net.add_cell("Rate")
 
-# Attach a 1D discrete Kalman filter propagator:
-# Process noise Q = 0.05, transition factor F = 1.0 (random walk)
-kalman = KalmanEstimatorPropagator(
+# Attach a 2-State Kalman filter propagator:
+kf = KalmanEstimatorPropagator(
     name="ThermalKalman",
-    state_cell=state_cell,
-    measurement_cell=measurement_cell,
-    output_cell=output_cell,
-    f_factor=1.0,
-    q_noise=0.05,
+    measurement_cell=meas,
+    output_state_cell=state,
+    output_rate_cell=rate,
+    process_noise_q=0.1,
 )
-net.add_propagator(kalman)
+net.add_propagator(kf)
 
-# Feed a noisy measurement: 22.0°C with sensor noise R = 0.5
-measurement_cell.set_value(GaussianValue(mean=22.0, variance=0.5))
+# Feed a noisy measurement: 22.0°C with sensor noise variance 0.5
+meas.set_value(GaussianValue(mean=22.0, variance=0.5))
 net.run()
 
-print(f"Updated Estimate: {output_cell.value}")
+print(f"Updated State Estimate: {state.value}")
+print(f"Updated Rate Estimate: {rate.value}")
 ```

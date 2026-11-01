@@ -15,19 +15,16 @@ When solving complex constraint satisfaction problems, exploring speculative hyp
 
 ```python
 from lattice_propagator import (
-    Cell,
-    PropagatorNetwork,
-    FlatValue,
     Assumption,
-    Premise,
+    FlatValue,
     TruthMaintenanceSystem,
 )
 
-tms = TruthMaintenanceSystem()
+tms = TruthMaintenanceSystem(cell_id="climate_mode")
 
 # Define hypotheses with confidence/priority:
-hyp_heat = Assumption("mode_heat", confidence=0.8)
-hyp_cool = Assumption("mode_cool", confidence=0.4)
+hyp_heat = Assumption("mode_heat", value=FlatValue("heat"), confidence=0.8)
+hyp_cool = Assumption("mode_cool", value=FlatValue("cool"), confidence=0.4)
 ```
 
 ---
