@@ -36,8 +36,8 @@ print(f"C: {c.value}")  # IntervalValue(15.0, 35.0)
 c.set_value(IntervalValue(18.0, 22.0))
 net.run()
 
-# The network automatically deduces A = C - B:
-# [18 - 15, 22 - 5] = [3, 17] intersected with original [10, 20] -> [10, 17]
+# The network automatically deduces A = C − B:
+# [18 − 15, 22 − 5] = [3, 17] ∩ [10, 20] → [10, 17]
 print(f"A refined: {a.value}")  # IntervalValue(10.0, 17.0)
 ```
 
@@ -45,7 +45,7 @@ print(f"A refined: {a.value}")  # IntervalValue(10.0, 17.0)
 
 ## 2. Multiplier & Zero-Absorption
 
-`MultiplierPropagator` handles multiplication and division, including zero-absorption:
+`MultiplierPropagator` handles multiplication and division ($X \times Y = Z$), including zero-absorption ($0 \times Y = 0$):
 
 ```python
 from lattice_propagator import (
@@ -61,7 +61,7 @@ z = net.add_cell("Z")
 
 net.add_propagator(MultiplierPropagator("Mult_X_Y_Z", x, y, z))
 
-# If X is 0, Z must be 0 regardless of Y:
+# If X is 0, Z must be 0 regardless of Y (0 × Y = 0):
 x.set_value(FlatValue(0.0))
 net.run()
 
@@ -79,7 +79,7 @@ from lattice_propagator import Cell, PropagatorNetwork, FlatValue
 
 net = PropagatorNetwork("FormulaDemo")
 
-# Declarative construction of Pythagorean theorem: c_sq = a^2 + b^2
+# Declarative construction of Pythagorean theorem: c² = a² + b²
 a = net.add_cell("a", FlatValue(3.0))
 b = net.add_cell("b", FlatValue(4.0))
 
@@ -88,5 +88,5 @@ b_sq = b * b
 c_sq = a_sq + b_sq
 
 net.run()
-print(f"c^2 = {c_sq.value}")  # FlatValue(25.0)
+print(f"c² = {c_sq.value}")  # FlatValue(25.0)
 ```

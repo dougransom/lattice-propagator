@@ -17,8 +17,8 @@ from lattice_propagator import (
 
 net = PropagatorNetwork("EnergyEnvelope")
 
-heat_pump = net.add_cell("heat_pump", IntervalValue(1200.0, 2500.0))  # 1.2kW - 2.5kW
-ev_charger = net.add_cell("ev_charger", IntervalValue(3000.0, 7200.0))  # 3.0kW - 7.2kW
+heat_pump = net.add_cell("heat_pump", IntervalValue(1200.0, 2500.0))  # 1.2 kW – 2.5 kW
+ev_charger = net.add_cell("ev_charger", IntervalValue(3000.0, 7200.0))  # 3.0 kW – 7.2 kW
 total_power = net.add_cell("total_power")
 
 # Total power = Heat Pump + EV Charger

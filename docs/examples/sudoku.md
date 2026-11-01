@@ -33,7 +33,7 @@ def build_sudoku_network() -> tuple[PropagatorNetwork, list[list[Cell]]]:
     for c in range(9):
         net.add_propagator(AllDifferentPropagator(f"Col_{c + 1}", [grid[r][c] for r in range(9)]))
 
-    # 9 3x3 Box Constraints
+    # 9 3×3 Box Constraints
     for br in range(3):
         for bc in range(3):
             box_cells = [grid[br * 3 + r][bc * 3 + c] for r in range(3) for c in range(3)]

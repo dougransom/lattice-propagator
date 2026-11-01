@@ -47,6 +47,15 @@ Whenever bumping `version` or modifying project metadata in `pyproject.toml`:
 - Run `./scripts/dev.sh metadata` (or activate the `sync-metadata` skill) to regenerate `codemeta.json` and `CITATION.cff`.
 - Note: `./scripts/dev.sh build` automatically runs metadata synchronization prior to packaging.
 
+### Rule 6: Rich Typography in Examples & Documentation
+When writing or adding examples, docstrings, or markdown documentation:
+- Prefer rich typography and mathematical Unicode characters over ASCII approximations:
+  - Exponents/powers: `c²`, `a² + b²`, `σ²` (in strings, cell names, comments, print statements, and markdown formulas; keep Python variable identifiers ASCII like `c_sq` since superscripts are invalid Python identifier characters).
+  - Operations & relations: `×`, `÷`, `−`, `±`, `√`, `≤`, `≥`, `≠`, `≈`, `∈`, `∉`.
+  - Lattice operations & states: `⊔` (join), `⊓` (meet), `⊥` (bottom), `⊤` (top/contradiction), `⊑` (refinement / partial order).
+  - Logic & arrows: `→`, `⇒`, `⟺`, `∩`, `∪`.
+  - Units & symbols: `°C`, `μ`, `σ`.
+
 ---
 
 ## 3. Standard Developer Commands

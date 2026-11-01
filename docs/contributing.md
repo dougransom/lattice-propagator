@@ -13,6 +13,7 @@ We welcome pull requests, issue reports, documentation improvements, and feedbac
 3. **Type Annotations**: All public classes, methods, and functions must include strict Python 3.11+ type hints.
 4. **Docstrings**: We follow the **Google Python Style Guide** for docstrings to ensure clean rendering in `mkdocstrings`.
 5. **Code Style**: Code is automatically formatted and linted via `ruff`.
+6. **Rich Typography**: In documentation, docstrings, and examples, prefer rich Unicode mathematical typography (`²`, `³`, `×`, `÷`, `−`, `±`, `√`, `⊔`, `⊓`, `⊥`, `⊤`, `→`, `°C`) over ASCII approximations.
 
 ---
 
