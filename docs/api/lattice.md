@@ -8,6 +8,7 @@ Information lattices, partial orders, and monotonic join/merge operations.
       members:
         - LatticeValue
         - Bottom
+        - BOTTOM
         - Contradiction
         - FlatValue
         - GaussianValue
