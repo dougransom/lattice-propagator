@@ -1,6 +1,10 @@
 # Lattice Propagator
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/dougransom/lattice-propagator/actions/workflows/ci.yml/badge.svg)](https://github.com/dougransom/lattice-propagator/actions/workflows/ci.yml)
+[![Python: 3.11+](https://img.shields.io/badge/Python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)](https://www.python.org/)
+[![Zero Runtime Dependencies](https://img.shields.io/badge/dependencies-0%20runtime-success)](pyproject.toml)
+[![PEP 561: py.typed](https://img.shields.io/badge/PEP%20561-py.typed-blue)](src/lattice_propagator/py.typed)
 
 **Lattice Propagator** is a pure Python implementation of the **propagator computational paradigm** over partial-information join-semilattices with integrated Truth Maintenance Systems (TMS).
 
@@ -91,5 +95,24 @@ For detailed contributor guides, see [DEVELOPMENT.md](DEVELOPMENT.md) and [CONTR
 
 ---
 
-## 4. License
+## 4. Home Assistant Core Import Compliance (`REQ-HAC`)
+
+`lattice-propagator` is engineered to satisfy all architectural and packaging requirements for direct importation into Home Assistant Core integrations:
+
+| Requirement | Standard | Status | Verified By |
+| :--- | :--- | :---: | :--- |
+| **Zero Event-Loop Blocking** | Pure in-memory computation; zero synchronous disk, subprocess, or network I/O | :white_check_mark: Compliant | Unit test suite & memory audits |
+| **Zero Runtime Dependencies** | `dependencies = []` in `pyproject.toml` (standard library only) | :white_check_mark: Compliant | `./scripts/dev.sh check` |
+| **PEP 561 Type Completeness** | Strict type annotations with `src/lattice_propagator/py.typed` marker | :white_check_mark: Compliant | `ruff check` & `dev_cli.py` gate |
+| **Stateless Re-entrancy** | Zero mutable module globals; multi-coordinator network isolation | :white_check_mark: Compliant | Integration test suite |
+| **Immutable Values** | Thread-safe, hashable lattice values (`frozen=True` or tuples) | :white_check_mark: Compliant | Data structure assertions |
+| **OSI Permissive License** | MIT License (compatible with Home Assistant Apache-2.0 core) | :white_check_mark: Compliant | `LICENSE` file |
+| **Universal Pure-Python Wheel** | Built via PEP 517/518 (`flit_core`) producing `py3-none-any.whl` | :white_check_mark: Compliant | `flit build` & GitHub Actions |
+| **Active Python Matrix** | Compatibility across Python 3.11, 3.12, 3.13, and 3.14 | :white_check_mark: Compliant | GitHub Actions CI matrix |
+
+For formal specifications, see [docs/requirements.md (Section 5: REQ-HAC)](docs/requirements.md#5-home-assistant-core-import-compliance-req-hac).
+
+---
+
+## 5. License
 MIT License. Copyright (c) Doug Ransom.

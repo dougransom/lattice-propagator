@@ -1,0 +1,60 @@
+name: Continuous Integration & Compliance
+
+on:
+  push:
+    branches: [main, initial_dev]
+  pull_request:
+    branches: [main, initial_dev]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify & Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv package manager
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Install dependencies and dev extras
+        run: |
+          uv pip install --system -e ".[all]"
+
+      - name: Execute Full Verification Gate (HAC Compliance + Metadata + Lint + Tests + Docs)
+        run: |
+          python -m lattice_propagator.dev_cli check
+
+      - name: Build Wheel & Source Distribution
+        run: |
+          python -m flit build
+
+      - name: Verify Wheel Contents (PEP 561 py.typed presence)
+        run: |
+          python -c "
+          import zipfile, glob, sys
+          wheels = glob.glob('dist/*.whl')
+          if not wheels:
+              sys.exit('No wheel generated in dist/')
+          with zipfile.ZipFile(wheels[0]) as z:
+              files = z.namelist()
+              if not any(f.endswith('py.typed') for f in files):
+                  sys.exit(f'py.typed missing from wheel contents: {files}')
+          print(f'✔ Verified pure-Python wheel: {wheels[0]} contains py.typed')
+          "

@@ -245,21 +245,59 @@ def cmd_build(args: argparse.Namespace) -> int:
     return _run_cmd(cmd)
 
 
+def check_hac_compliance(repo_root: Path = REPO_ROOT) -> int:
+    """Verify Home Assistant Core import compliance rules (REQ-HAC)."""
+    errors = []
+    pyproject_file = repo_root / "pyproject.toml"
+    with open(pyproject_file, "rb") as f:
+        pyproject = tomllib.load(f)
+
+    # 1. Zero runtime dependencies
+    deps = pyproject.get("project", {}).get("dependencies", None)
+    if deps != []:
+        errors.append(f"REQ-HAC-2 violation: 'dependencies' must be empty ([]), got: {deps}")
+
+    # 2. PEP 561 py.typed marker
+    py_typed = repo_root / "src" / "lattice_propagator" / "py.typed"
+    if not py_typed.is_file():
+        errors.append(f"REQ-HAC-3 violation: Missing PEP 561 marker file: {py_typed}")
+
+    # 3. License
+    license_text = pyproject.get("project", {}).get("license", {}).get("text", "")
+    if license_text != "MIT":
+        errors.append(f"REQ-HAC-6 violation: License must be 'MIT', got: {license_text}")
+
+    if errors:
+        for err in errors:
+            print(f"\033[1;31m✖ {err}\033[0m")
+        return 1
+
+    print("\033[1;32m✔ Home Assistant Core import compliance (REQ-HAC) verified:\033[0m")
+    print("  • Zero runtime dependencies: dependencies = []")
+    print("  • PEP 561 type marker: src/lattice_propagator/py.typed present")
+    print("  • License: MIT")
+    return 0
+
+
 def cmd_check(args: argparse.Namespace) -> int:
-    """Run all verification checks (metadata, lint, test, docs-build)."""
+    """Run all verification checks (HAC compliance, metadata, lint, test, docs-build)."""
+    print("\033[1;32m[1/5] Checking Home Assistant Core import compliance (REQ-HAC)...\033[0m")
+    if check_hac_compliance() != 0:
+        return 1
+
     print(
-        "\033[1;32m[1/4] Checking metadata synchronization (codemeta.json & CITATION.cff)...\033[0m"
+        "\n\033[1;32m[2/5] Checking metadata synchronization (codemeta.json & CITATION.cff)...\033[0m"
     )
     meta_args = argparse.Namespace(check=True)
     if cmd_metadata(meta_args) != 0:
         return 1
 
-    print("\n\033[1;32m[2/4] Checking linting and formatting...\033[0m")
+    print("\n\033[1;32m[3/5] Checking linting and formatting...\033[0m")
     args.fix = False
     if cmd_lint(args) != 0:
         return 1
 
-    print("\n\033[1;32m[3/4] Running tests with coverage...\033[0m")
+    print("\n\033[1;32m[4/5] Running tests with coverage...\033[0m")
     args.coverage = True
     args.verbose = False
     args.k = None
@@ -267,7 +305,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     if cmd_test(args) != 0:
         return 1
 
-    print("\n\033[1;32m[4/4] Building documentation (--strict)...\033[0m")
+    print("\n\033[1;32m[5/5] Building documentation (--strict)...\033[0m")
     args.strict = True
     if cmd_docs_build(args) != 0:
         return 1
