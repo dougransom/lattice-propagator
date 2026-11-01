@@ -81,6 +81,7 @@ nav:
       - Bidirectional Resistor Networks: examples/resistor_network.md
       - Kinematic Reachability Envelopes: examples/kinematics.md
       - Time-of-Day Circular Intervals: examples/clock_intervals.md
+      - Signal Trajectories & Curve Generation: examples/trajectories.md
   - API Reference:
       - lattice: api/lattice.md
       - primitives: api/primitives.md

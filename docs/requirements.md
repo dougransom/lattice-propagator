@@ -127,6 +127,10 @@ title: Propagator Primitives & Fixed-Point Scheduling
   - `KalmanEstimatorPropagator` must maintain state and rate estimates under Gaussian process and measurement noise.
 - **REQ-PROP-6 (Constraint Satisfaction & Elimination):**
   - `AllDifferentPropagator` must perform forward elimination (naked singles) across groups of discrete cells.
+- **REQ-PROP-7 (Temporal Trajectory Envelopes & Curve Generation):**
+  - `TrajectoryEnvelopePropagator` must evaluate continuous Signal Temporal Logic (STL) interval envelopes $[y_{\min}(t), y_{\max}(t)]$ over piecewise `TrajectorySegment` schedules parameterized by elapsed time $\Delta t$.
+  - The propagator must support normalized easing transitions (`linear`, `smoothstep`, `sigmoid`, `tanh`, `exponential`) as well as user-supplied mathematical callbacks (`custom_eval`), and optional additive dynamic reference offset cells.
+
 
 ---
 
