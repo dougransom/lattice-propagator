@@ -46,13 +46,14 @@ Information within a Cell is structured as a join-semilattice (L, <=, merge), en
 - **MultiplierPropagator**: Multidirectional constraint box enforcing $a \times b = c$ with zero-absorption and division.
 - **SwitchPropagator**: Conditional gate routing data when a control cell matches an active state.
 - **ConditionalPropagator**: Multiplexer (if-then-else) with Sussman-Radul consensus optimization when branches agree.
-- **lift_propagator**: Higher-order functional propagator lifting any pure function over lattice values.
+- **FunctionalPropagator** / **lift_propagator**: Higher-order functional propagator lifting any pure function over lattice values.
 - **ArithmeticPropagator**: Linear combinations, differences, and multidirectional power balances.
 - **RatePropagator**: Derivative/velocity estimation and time-to-threshold intervals.
 - **LagPropagator**: First-order dynamic lag (RC thermal inertia / exponential decay).
+- **KalmanEstimatorPropagator**: Real-time state estimation fusing noisy sensors and linear dynamics.
 - **ThresholdPropagator**: Bounded comparisons with hysteresis.
-- **ElasticModulatorPropagator**: Constraint modulation based on dynamic tariffs or solar signals.
-- **KinematicsPropagator**: Multi-axis position, velocity, and acceleration constraints.
+- **BoundedLinearPropagator**: Constraint modulation within acceptable intervals based on driving signals.
+- **AllDifferentPropagator**: Non-overlapping constraint deduction with hidden single elimination (e.g. Sudoku).
 
 ### D. Truth Maintenance & Belief Revision (TMS / DDB)
 - **TruthMaintenanceSystem**: Cell-level justifications and support-set provenance tracking.

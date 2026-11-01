@@ -11,13 +11,11 @@ from lattice_propagator.lattice import (
 from lattice_propagator.primitives import (
     AllDifferentPropagator,
     ArithmeticPropagator,
-    DynamicScenePropagator,
-    ElasticModulatorPropagator,
+    BoundedLinearPropagator,
     KalmanEstimatorPropagator,
     LagPropagator,
     PropagatorNetwork,
     RatePropagator,
-    ScenePhase,
     ThresholdPropagator,
 )
 
@@ -116,7 +114,7 @@ def test_lag_propagator_thermal_inertia():
     assert 20.9 < res.mean < 21.1
 
 
-def test_elastic_modulator_tou_pricing():
+def test_bounded_linear_propagator():
     """Verify comfort band target modulation driven by electricity tariff / solar signal."""
     net = PropagatorNetwork("ComfortOptimizer")
     price = net.add_cell("Tariff")
@@ -124,7 +122,7 @@ def test_elastic_modulator_tou_pricing():
 
     # Comfort interval: [20.0°C, 22.5°C], nominal = 21.0°C, baseline price = $0.20/kWh
     # Sensitivity = 10.0 (°C per $/kWh)
-    modulator = ElasticModulatorPropagator(
+    modulator = BoundedLinearPropagator(
         name="TOUModulator",
         signal_cell=price,
         output_cell=target,
@@ -398,119 +396,3 @@ def test_kalman_estimator_network_reactive_alert():
     kf.reset(x=10.0, v=2.0)
     assert kf.x == 10.0
     assert kf.v == 2.0
-
-
-def test_dynamic_scene_propagator_lifecycle():
-    """Verify DynamicScenePropagator multi-phase temporal progression and deactivation."""
-    net = PropagatorNetwork("WakeupScene")
-    scene_active = net.add_cell("SceneActive", DiscreteDomain.single(True))
-    light_target = net.add_cell("LightTarget")
-    scene_phase = net.add_cell("CurrentPhase")
-
-    phases = [
-        ScenePhase(
-            name="Dawn",
-            duration_seconds=60.0,
-            bounds=IntervalValue(0.01, 0.10),
-            transition="linear",
-        ),
-        ScenePhase(
-            name="Sunrise",
-            duration_seconds=120.0,
-            bounds=IntervalValue(0.10, 0.70),
-            transition="linear",
-        ),
-        ScenePhase(
-            name="Full", duration_seconds=60.0, bounds=IntervalValue(0.70, 1.00), transition="step"
-        ),
-    ]
-
-    scene_prop = DynamicScenePropagator(
-        "WakeupTrajectory",
-        active_cell=scene_active,
-        output_target_cell=light_target,
-        phases=phases,
-        output_phase_cell=scene_phase,
-    )
-    net.add_propagator(scene_prop)
-    net.run()
-
-    # t = 0: Initial evaluation at start of Dawn phase
-    assert isinstance(light_target.value, IntervalValue)
-    assert math.isclose(light_target.value.min_val, 0.01)
-    assert math.isclose(light_target.value.max_val, 0.10)
-    assert scene_phase.value == DiscreteDomain.single("Dawn")
-
-    # t = 30s: Halfway through Dawn (linear interpolation from [0.01, 0.10] to [0.01, 0.10] is [0.01, 0.10])
-    scene_prop.evaluate_at(30.0)
-    assert math.isclose(light_target.value.min_val, 0.01)
-    assert math.isclose(light_target.value.max_val, 0.10)
-
-    # t = 120s: 60s into Sunrise phase (halfway through Sunrise, interpolated from [0.01, 0.10] to [0.10, 0.70])
-    # progress = (120 - 60) / 120 = 0.5
-    # min_val = 0.01 + 0.5 * (0.10 - 0.01) = 0.055
-    # max_val = 0.10 + 0.5 * (0.70 - 0.10) = 0.40
-    scene_prop.evaluate_at(120.0)
-    assert scene_phase.value == DiscreteDomain.single("Sunrise")
-    assert math.isclose(light_target.value.min_val, 0.055, abs_tol=1e-3)
-    assert math.isclose(light_target.value.max_val, 0.40, abs_tol=1e-3)
-
-    # t = 180s: Start of Full phase (step transition)
-    scene_prop.evaluate_at(180.0)
-    assert scene_phase.value == DiscreteDomain.single("Full")
-    assert math.isclose(light_target.value.min_val, 0.70)
-    assert math.isclose(light_target.value.max_val, 1.00)
-
-    # Stepping dt forwards
-    scene_prop.step(10.0)
-    assert scene_phase.value == DiscreteDomain.single("Full")
-
-    # Scene deactivation -> automatic relaxation to BOTTOM
-    scene_active.set_value(DiscreteDomain.single(False), overwrite=True)
-    net.run()
-    from lattice_propagator.lattice import BOTTOM
-
-    assert light_target.value == BOTTOM
-    assert scene_phase.value == BOTTOM
-
-
-def test_dynamic_scene_modifiers_and_clamping():
-    """Verify contextual reference cell modulation, reactive modifiers, and envelope clamping."""
-    net = PropagatorNetwork("CinemaScene")
-    scene_active = net.add_cell("CinemaActive", DiscreteDomain.single("active"))
-    tv_paused = net.add_cell("TVPaused", DiscreteDomain.single(False))
-    circadian_cct = net.add_cell("CircadianCCT", IntervalValue(2200.0, 2700.0))
-    cct_target = net.add_cell("CCTTarget")
-
-    phases = [
-        ScenePhase(
-            name="CinemaDim",
-            duration_seconds=100.0,
-            bounds=IntervalValue(2000.0, 3200.0),
-            transition="step",
-        )
-    ]
-
-    scene_prop = DynamicScenePropagator(
-        "CinemaLighting",
-        active_cell=scene_active,
-        output_target_cell=cct_target,
-        phases=phases,
-        reference_cell=circadian_cct,
-        modifier_cell=tv_paused,
-        modifier_delta=200.0,  # Boost color temperature slightly when paused
-        clamp_bounds=IntervalValue(1800.0, 3000.0),
-    )
-    net.add_propagator(scene_prop)
-    net.run()
-
-    # Base evaluation: [2000, 3200] clamped with circadian [2200, 2700] -> [2200, 2700]
-    assert isinstance(cct_target.value, IntervalValue)
-    assert math.isclose(cct_target.value.min_val, 2200.0)
-    assert math.isclose(cct_target.value.max_val, 2700.0)
-
-    # TV pauses -> modifier applies (+200 K) -> [2400, 2900], within clamp envelope [1800, 3000]
-    tv_paused.set_value(DiscreteDomain.single(True), overwrite=True)
-    net.run()
-    assert math.isclose(cct_target.value.min_val, 2400.0)
-    assert math.isclose(cct_target.value.max_val, 2900.0)

@@ -14,7 +14,7 @@ Core building blocks for composing autonomous propagator networks:
   * ArithmeticPropagator: Linear combinations, differences, and power balances.
   * RatePropagator: Derivative/velocity and time-to-threshold (ETA) intervals.
   * LagPropagator: First-order dynamic lag (RC thermal inertia / exponential smoothing).
-  * ElasticModulatorPropagator: Interval constraint modulation based on cost/solar signals.
+  * BoundedLinearPropagator: Interval constraint modulation based on cost/solar signals.
   * ThresholdPropagator: Bounded threshold comparisons with hysteresis.
 - PropagatorNetwork: Fixed-point relaxation engine with TMS justification tracking.
 """
@@ -25,7 +25,6 @@ import math
 from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any
 
 from .lattice import (
@@ -980,7 +979,7 @@ class KalmanEstimatorPropagator(Propagator):
         self.step(z, r=r, dt=dt)
 
 
-class ElasticModulatorPropagator(Propagator):
+class BoundedLinearPropagator(Propagator):
     """Modulates a target within an acceptable tolerance interval based on a driving signal (e.g. price, solar).
 
     Target = clamp(Nominal + sensitivity * (Baseline - Signal), [Min, Max])
@@ -1170,190 +1169,6 @@ class AllDifferentPropagator(Propagator):
         """Run all-different constraint propagation across the cell group."""
         if self._forward_eliminate():
             self._deduce_hidden_singles()
-
-
-@dataclass(frozen=True)
-class ScenePhase:
-    """A distinct temporal phase in a dynamic scene trajectory envelope."""
-
-    name: str
-    duration_seconds: float
-    bounds: IntervalValue
-    transition: str = "linear"  # "linear" or "step"
-
-
-class DynamicScenePropagator(Propagator):
-    """Dynamic Scene Propagator modeling temporal envelopes and contextual bounds.
-
-    Maps elapsed time since scene activation (delta_t) through a multi-phase
-    trajectory envelope (e.g. Wakeup, Cinema, Sunset), optionally modulated
-    by contextual reference cells (e.g. circadian CCT or ambient lux) and
-    temporary modifiers (e.g. TV paused or motion detected).
-    """
-
-    def __init__(
-        self,
-        name: str,
-        active_cell: Cell,
-        output_target_cell: Cell,
-        phases: list[ScenePhase],
-        reference_cell: Cell | None = None,
-        modifier_cell: Cell | None = None,
-        modifier_delta: float = 0.0,
-        clamp_bounds: IntervalValue | None = None,
-        output_phase_cell: Cell | None = None,
-    ) -> None:
-        inputs = [active_cell]
-        if reference_cell is not None:
-            inputs.append(reference_cell)
-        if modifier_cell is not None:
-            inputs.append(modifier_cell)
-
-        outputs = [output_target_cell]
-        if output_phase_cell is not None:
-            outputs.append(output_phase_cell)
-
-        super().__init__(name, inputs, outputs)
-        self.active_cell = active_cell
-        self.output_target_cell = output_target_cell
-        self.phases = phases
-        self.reference_cell = reference_cell
-        self.modifier_cell = modifier_cell
-        self.modifier_delta = modifier_delta
-        self.clamp_bounds = clamp_bounds
-        self.output_phase_cell = output_phase_cell
-
-        self._start_time: float | None = None
-        self._elapsed_time: float = 0.0
-
-    def is_active(self) -> bool:
-        """Return True if the active_cell signifies an active scene."""
-        val = self.active_cell.value
-        if isinstance(val, (Bottom, Contradiction)):
-            return False
-        if isinstance(val, DiscreteDomain):
-            v = val.value
-            return v not in (False, "off", 0, "inactive", None)
-        return True
-
-    def reset(self) -> None:
-        """Reset elapsed time and activation state."""
-        self._start_time = None
-        self._elapsed_time = 0.0
-
-    def step(self, dt: float) -> None:
-        """Advance scene timeline by dt seconds and evaluate current bounds."""
-        if not self.is_active():
-            if self._start_time is not None or self.output_target_cell.value != BOTTOM:
-                self.reset()
-                self.output_target_cell.set_value(BOTTOM, source=self.name, overwrite=True)
-                if self.output_phase_cell is not None:
-                    self.output_phase_cell.set_value(BOTTOM, source=self.name, overwrite=True)
-            return
-
-        if self._start_time is None:
-            self._start_time = 0.0
-            self._elapsed_time = 0.0
-        else:
-            self._elapsed_time += max(0.0, dt)
-
-        self._evaluate()
-
-    def evaluate_at(self, elapsed_seconds: float) -> None:
-        """Evaluate scene bounds at a specific elapsed duration."""
-        if not self.is_active():
-            self.output_target_cell.set_value(BOTTOM, source=self.name, overwrite=True)
-            if self.output_phase_cell is not None:
-                self.output_phase_cell.set_value(BOTTOM, source=self.name, overwrite=True)
-            return
-
-        self._start_time = 0.0
-        self._elapsed_time = max(0.0, elapsed_seconds)
-        self._evaluate()
-
-    def _find_current_phase(self, elapsed: float) -> tuple[ScenePhase, IntervalValue, float]:
-        """Find the active phase, reference previous bounds, and phase start timestamp."""
-        accumulated_t = 0.0
-        current_phase = self.phases[-1]
-        prev_bounds = self.phases[0].bounds
-        phase_start_t = 0.0
-
-        for i, phase in enumerate(self.phases):
-            phase_duration = max(0.0, phase.duration_seconds)
-            phase_end_t = accumulated_t + phase_duration
-            if elapsed < phase_end_t or i == len(self.phases) - 1:
-                current_phase = phase
-                phase_start_t = accumulated_t
-                prev_bounds = self.phases[i - 1].bounds if i > 0 else phase.bounds
-                break
-            accumulated_t = phase_end_t
-
-        return current_phase, prev_bounds, phase_start_t
-
-    def _interpolate_bounds(
-        self,
-        phase: ScenePhase,
-        prev_bounds: IntervalValue,
-        phase_start_t: float,
-        elapsed: float,
-    ) -> IntervalValue:
-        """Interpolate bounds for the current phase or return step bounds."""
-        if phase.transition != "linear":
-            return phase.bounds
-        dur = max(phase.duration_seconds, 1e-6)
-        progress = min(1.0, max(0.0, (elapsed - phase_start_t) / dur))
-        cur_min = prev_bounds.min_val + progress * (phase.bounds.min_val - prev_bounds.min_val)
-        cur_max = prev_bounds.max_val + progress * (phase.bounds.max_val - prev_bounds.max_val)
-        return IntervalValue(min_val=cur_min, max_val=cur_max)
-
-    def _is_modifier_active(self) -> bool:
-        """Check if secondary modifier cell is currently active."""
-        if self.modifier_cell is None or isinstance(
-            self.modifier_cell.value, (Bottom, Contradiction)
-        ):
-            return False
-        if isinstance(self.modifier_cell.value, DiscreteDomain):
-            return self.modifier_cell.value.value not in (False, "off", 0, None)
-        return True
-
-    def _apply_modulations(self, bounds: IntervalValue) -> IntervalValue:
-        """Apply reference cell clamping, reactive modifiers, and safety envelope."""
-        cur_bounds = bounds
-        if self.reference_cell is not None and isinstance(self.reference_cell.value, IntervalValue):
-            clamped = cur_bounds.clamp(self.reference_cell.value)
-            if isinstance(clamped, IntervalValue):
-                cur_bounds = clamped
-
-        if self._is_modifier_active():
-            cur_bounds = cur_bounds + self.modifier_delta
-
-        if self.clamp_bounds is not None:
-            envelope = cur_bounds.clamp(self.clamp_bounds)
-            if isinstance(envelope, IntervalValue):
-                cur_bounds = envelope
-
-        return cur_bounds
-
-    def _evaluate(self) -> None:
-        """Compute and propagate current interval bounds based on elapsed timeline."""
-        if not self.phases:
-            return
-
-        phase, prev_bounds, phase_start_t = self._find_current_phase(self._elapsed_time)
-        raw_bounds = self._interpolate_bounds(phase, prev_bounds, phase_start_t, self._elapsed_time)
-        final_bounds = self._apply_modulations(raw_bounds)
-
-        self.output_target_cell.set_value(final_bounds, source=self.name, overwrite=True)
-        if self.output_phase_cell is not None:
-            self.output_phase_cell.set_value(
-                DiscreteDomain.single(phase.name),
-                source=self.name,
-                overwrite=True,
-            )
-
-    def alert(self, network: PropagatorNetwork) -> None:
-        """Triggered when active_cell, reference_cell, or modifier_cell changes."""
-        self.step(dt=0.0)
 
 
 class PropagatorNetwork:
