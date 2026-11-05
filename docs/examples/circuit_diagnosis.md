@@ -48,7 +48,13 @@ class LogicGatePropagator(Propagator):
         out: Cell,
         health_assumption: str,
     ) -> None:
-        super().__init__(name, [in1, in2], [out])
+        super().__init__(
+            name,
+            [in1, in2],
+            [out],
+            confidence=0.90,
+            is_assumption=True,
+        )
         self.gate_type = gate_type
         self.in1 = in1
         self.in2 = in2
@@ -68,28 +74,26 @@ class LogicGatePropagator(Propagator):
             else:
                 return
 
-            self.out.set_value(
-                FlatValue(res),
-                source=self.health_assumption,
-                is_assumption=True,
-                confidence=0.90,
-            )
+            self.emit(self.out, FlatValue(res), source=self.health_assumption)
 
 
 # 1. Instantiate the Full Adder Network
 net = PropagatorNetwork("FullAdderDiagnosis")
+tms = NetworkTMS(net)
 
 # Inputs
 A = net.add_cell("A", FlatValue(True))
 B = net.add_cell("B", FlatValue(False))
 Cin = net.add_cell("Cin", FlatValue(True))
 
-# Internal wires & Outputs
+# Internal wires & Outputs registered with NetworkTMS
 S1 = net.add_cell("S1")
 C1 = net.add_cell("C1")
 C2 = net.add_cell("C2")
 Sum = net.add_cell("Sum")
 Cout = net.add_cell("Cout")
+for wire in ("S1", "C1", "C2", "Sum", "Cout"):
+    tms.get_or_create_cell_tms(wire)
 
 # Connect logic gates
 net.add_propagator(LogicGatePropagator("XOR1", "XOR", A, B, S1, "gate_xor1_ok"))
@@ -98,7 +102,6 @@ net.add_propagator(LogicGatePropagator("AND1", "AND", A, B, C1, "gate_and1_ok"))
 net.add_propagator(LogicGatePropagator("AND2", "AND", S1, Cin, C2, "gate_and2_ok"))
 net.add_propagator(LogicGatePropagator("OR1", "OR", C1, C2, Cout, "gate_or1_ok"))
 
-tms = NetworkTMS(net)
 net.run()
 
 print(f"Normal deduction: Sum = {Sum.value}, Cout = {Cout.value}")
@@ -114,14 +117,8 @@ net.run()
 assert isinstance(Sum.value, Contradiction)
 print(f"Contradiction: {Sum.value.reason}")
 
-# Sync cell TMS premises into NetworkTMS
-for name, cell in net.cells.items():
-    if cell.tms:
-        for src_id, premise in cell.tms.premises.items():
-            tms.assumptions[src_id] = premise
-
-# DDB isolates the suspect assumption set and retracts the weakest culprit
-culprit = tms.resolve_contradiction(["gate_xor1_ok", "gate_xor2_ok", "multimeter_probe"])
+# DDB isolates the suspect assumption set (including transitive support from S1 -> XOR1) and retracts the weakest culprit
+culprit = tms.resolve_contradiction(Sum.tms.active_sources)
 print(f"Diagnostic conclusion: Isolated faulty component -> {culprit}")
 print(f"Recorded Nogood set: {tms.nogoods}")
 assert culprit in ("gate_xor1_ok", "gate_xor2_ok")

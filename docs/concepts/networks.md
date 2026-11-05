@@ -49,6 +49,7 @@ A `Propagator` is an autonomous computational unit. It:
 | `AdderPropagator(a, b, c)` | Enforces $a + b = c$ ($c = a + b, a = c - b, b = c - a$) | Yes |
 | `MultiplierPropagator(a, b, c)` | Enforces $a \times b = c$ with zero-absorption and division | Yes |
 | `SwitchPropagator(control, input, output, trigger)` | Routes `input` to `output` when `control == trigger` | Forward |
+| `MobileLinkPropagator(name, channel, payload, ...)` | $\pi$-calculus link mobility ($c?(y).\, y!\langle v \rangle$) with automatic TMS handoff | Dynamic |
 | `ConditionalPropagator(pred, cons, alt, out)` | Multiplexer with Sussman-Radul consensus optimization | Forward |
 | `RatePropagator(source, rate, dt)` | First-order velocity/derivative estimation | Forward |
 | `LagPropagator(input, output, tau, dt)` | First-order exponential lag filter (thermal inertia) | Forward |

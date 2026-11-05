@@ -319,3 +319,79 @@ def test_cell_and_network_explain_node_and_translator() -> None:
     )
     de_explain = net.explain("temp", translator=de_translator)
     assert de_explain.startswith("Kombiniere t1 (20.0°C) zu 20.0°C")
+
+
+def test_propagator_rule_level_assumption_and_transitive_support() -> None:
+    """Test rule-level is_assumption/confidence on Propagator subclasses and transitive DDB."""
+    from lattice_propagator import (
+        BoundedLinearPropagator,
+        ConditionalPropagator,
+        Contradiction,
+        FlatValue,
+        FunctionalPropagator,
+        MultiplierPropagator,
+        NetworkTMS,
+        PropagatorNetwork,
+        SwitchPropagator,
+    )
+
+    net = PropagatorNetwork("RuleLevelAssumptions")
+    ntms = NetworkTMS(net)
+
+    sig = net.add_cell("price_signal", GaussianValue(mean=0.40, variance=0.01))
+    mod_out = net.add_cell("modulated_target")
+    ctrl = net.add_cell("switch_ctrl", FlatValue(True))
+    switched_out = net.add_cell("switched_target")
+    cond = net.add_cell("cond_flag", FlatValue(True))
+    alt = net.add_cell("alt_target", GaussianValue(mean=21.0, variance=0.1))
+    mux_out = net.add_cell("mux_target")
+    scale = net.add_cell("scale_factor", GaussianValue(mean=2.0, variance=0.01))
+    prod_out = net.add_cell("prod_target")
+    fn_out = net.add_cell("fn_target")
+
+    for c in (mod_out, switched_out, mux_out, prod_out, fn_out):
+        ntms.get_or_create_cell_tms(c.cell_id)
+
+    # BoundedLinearPropagator configured as a defeasible heuristic assumption (confidence=0.7)
+    net.add_propagator(
+        BoundedLinearPropagator(
+            name="heuristic_eco_modulation",
+            signal_cell=sig,
+            output_cell=mod_out,
+            acceptable_range=IntervalValue(18.0, 24.0),
+            nominal_target=21.0,
+            baseline_signal=0.20,
+            sensitivity=5.0,
+            confidence=0.7,
+            is_assumption=True,
+        )
+    )
+    net.add_propagator(SwitchPropagator("gate_eco", ctrl, mod_out, switched_out, confidence=0.9))
+    net.add_propagator(
+        ConditionalPropagator("mux_eco", cond, switched_out, alt, mux_out, confidence=0.9)
+    )
+    net.add_propagator(MultiplierPropagator("mul_eco", mux_out, scale, prod_out, confidence=1.0))
+    net.add_propagator(
+        FunctionalPropagator(
+            "fn_interval",
+            lambda g: IntervalValue(g.mean - 1.0, g.mean + 1.0),
+            [prod_out],
+            fn_out,
+        )
+    )
+
+    net.run()
+
+    # Check transitive provenance at the end of the 5-propagator chain
+    fn_prem = fn_out.tms.premises["fn_interval"]
+    assert fn_prem.is_assumption is True
+    assert math.isclose(fn_prem.confidence, round(0.7 * 0.9 * 0.9, 4))
+    assert "heuristic_eco_modulation" in fn_prem.support
+
+    # Force a contradiction at the leaf cell and resolve via DDB
+    fn_out.set_value(IntervalValue(0.0, 5.0), source="hard_safety_clamp")
+    assert isinstance(fn_out.value, Contradiction)
+
+    retracted = ntms.resolve_contradiction(fn_out.tms.active_sources)
+    assert retracted == "heuristic_eco_modulation"
+    assert fn_out.value == IntervalValue(0.0, 5.0)

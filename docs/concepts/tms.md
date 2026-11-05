@@ -36,8 +36,45 @@ hyp_cool = Assumption("mode_cool", value=FlatValue("cool"), confidence=0.4)
 
 When non-monotonic belief revision is required:
 1. Instantiate a `NetworkTMS`.
-2. Wrap defeasible assertions in `Assumption` objects.
-3. If a `Contradiction` is reached, `NetworkTMS` traces the dependency provenance back to the set of responsible assumptions, creates a **Nogood** record, and retracts the lowest-confidence assumption to restore consistency.
+2. Assert defeasible hypotheses via `NetworkTMS.assume(...)` or configure heuristic propagators with `Propagator(..., confidence=..., is_assumption=True)`.
+3. Every built-in `Propagator` uses `self.emit()` to automatically propagate upstream assumption `support` sets and weakest-link confidence ($\text{confidence} \times \min_i \text{conf}_i$) to downstream cells.
+4. If a `Contradiction` ($\top$) is reached on any downstream cell, `NetworkTMS.resolve_contradiction()` traces the transitive `support` set back to the responsible assumptions, records a **Nogood**, and retracts the lowest-confidence assumption to restore consistency.
+
+```python
+from lattice_propagator import (
+    AdderPropagator,
+    Contradiction,
+    IntervalValue,
+    NetworkTMS,
+    PropagatorNetwork,
+)
+
+net = PropagatorNetwork("SupportCascade")
+ntms = NetworkTMS(net)
+
+a = net.add_cell("a")
+b = net.add_cell("b")
+c = net.add_cell("c")
+for cid in ("a", "b", "c"):
+    ntms.get_or_create_cell_tms(cid)
+
+# Assert a defeasible assumption on 'a' (conf=0.6) and a ground fact on 'b'
+ntms.assume("a", "solar_forecast_high", IntervalValue(20.0, 22.0), confidence=0.6)
+b.set_value(IntervalValue(5.0, 5.0), source="base_load")
+
+# AdderPropagator automatically propagates 'solar_forecast_high' support & confidence to 'c'
+net.add_propagator(AdderPropagator("sum_ab", a, b, c, confidence=0.9))
+net.run()
+assert c.tms.premises["sum_ab"].is_assumption is True
+assert c.tms.premises["sum_ab"].confidence == 0.54
+
+# Hard safety cap on 'c' triggers a contradiction, resolved by retracting 'solar_forecast_high'
+c.set_value(IntervalValue(10.0, 20.0), source="breaker_limit")
+assert isinstance(c.value, Contradiction)
+retracted = ntms.resolve_contradiction(c.tms.active_sources)
+assert retracted == "solar_forecast_high"
+assert c.value == IntervalValue(10.0, 20.0)
+```
 
 ---
 

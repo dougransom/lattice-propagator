@@ -38,6 +38,8 @@ from .lattice import (
     GaussianValue,
     IntervalValue,
     LatticeValue,
+    OrderedInterval,
+    SetLattice,
     merge_lattice,
 )
 from .tms import ExplanationNode, Justification, Translator
@@ -160,6 +162,7 @@ class Cell:
         justification: Justification | None = None,
         confidence: float = 1.0,
         is_assumption: bool = False,
+        support: frozenset[str] | None = None,
     ) -> bool:
         """Merge or update a value into this cell (or its canonical representative).
 
@@ -174,6 +177,7 @@ class Cell:
                 justification=justification,
                 confidence=confidence,
                 is_assumption=is_assumption,
+                support=support,
             )
 
         if overwrite or root._value == BOTTOM:
@@ -191,6 +195,32 @@ class Cell:
         root._value = merged
         if root.network:
             root.network.notify_changed(root, source=source)
+        return True
+
+    def retract_source(self, source: str, reason: str = "retracted") -> bool:
+        """Retract a source premise from this cell's TMS and recompute its fused value.
+
+        Args:
+            source: Identifier of the premise source to retract.
+            reason: Reason for retraction (e.g. 'retracted', 'link_moved', 'unavailable').
+
+        Returns:
+            True if the cell's canonical value changed after retraction.
+        """
+        root = self._find()
+        tms = root.get_or_create_tms()
+        if source not in tms.premises or not tms.premises[source].is_active:
+            return False
+        tms.retract_evidence(source, reason=reason)
+        if tms.network_tms is not None and source in tms.network_tms.assumptions:
+            tms.network_tms.assumptions[source].is_active = False
+            tms.network_tms.assumptions[source].status_reason = reason
+        recomputed = tms.compute_fused_value()
+        if root._value == recomputed:
+            return False
+        root._value = recomputed
+        if root.network:
+            root.network.notify_changed(root, source=f"retract:{source}")
         return True
 
     def __add__(self, other: Any) -> Cell:
@@ -225,19 +255,145 @@ class Cell:
 
 
 class Propagator(ABC):
-    """Abstract base class for all propagator operators."""
+    """Abstract base class for all propagator operators with unified TMS provenance."""
 
     def __init__(
         self,
         name: str,
         inputs: list[Cell],
         outputs: list[Cell],
+        confidence: float = 1.0,
+        is_assumption: bool = False,
     ) -> None:
         self.name = name
         self.inputs = inputs
         self.outputs = outputs
+        self.confidence = confidence
+        self.is_assumption = is_assumption
         for c in inputs:
             c.add_propagator(self)
+
+    def derive_provenance(
+        self,
+        antecedents: list[Cell] | tuple[Cell, ...] | None = None,
+        parameters: dict[str, Any] | None = None,
+        source: str | None = None,
+        confidence_scale: float = 1.0,
+        force_assumption: bool = False,
+    ) -> tuple[Justification, float, bool, frozenset[str] | None]:
+        """Derive TMS justification, weakest-link confidence, defeasibility, and ATMS support set.
+
+        Args:
+            antecedents: Input cells contributing to this deduction (defaults to `self.inputs`).
+            parameters: Optional rule parameters for the `Justification` record.
+            source: Premise source identifier (defaults to `self.name`).
+            confidence_scale: Multiplicative scale factor in (0.0, 1.0] (e.g. for ambiguous branches).
+            force_assumption: If True, forces the derived premise to be a defeasible assumption.
+
+        Returns:
+            Tuple of `(justification, derived_confidence, derived_is_assumption, derived_support)`.
+        """
+        ant_cells = tuple(antecedents if antecedents is not None else self.inputs)
+        min_input_conf = 1.0
+        any_input_assumption = False
+        upstream_support: set[str] = set()
+
+        for c in ant_cells:
+            root = c._find()
+            if root.tms is not None:
+                active = [p for p in root.tms.premises.values() if p.is_active]
+                if active:
+                    min_input_conf = min(
+                        min_input_conf,
+                        min(p.confidence for p in active),
+                    )
+                    for p in active:
+                        if p.is_assumption:
+                            any_input_assumption = True
+                            upstream_support.update(p.support)
+
+        src = source or self.name
+        if self.is_assumption or force_assumption:
+            upstream_support.add(src)
+
+        derived_conf = round(self.confidence * confidence_scale * min_input_conf, 4)
+        derived_is_assump = self.is_assumption or force_assumption or any_input_assumption
+        derived_support = frozenset(upstream_support) if upstream_support else None
+        just = Justification(
+            rule_name=self.__class__.__name__,
+            antecedents=tuple(c.cell_id for c in ant_cells),
+            parameters=parameters or {},
+        )
+        return just, derived_conf, derived_is_assump, derived_support
+
+    def emit(
+        self,
+        target: Cell,
+        value: LatticeValue,
+        *,
+        source: str | None = None,
+        overwrite: bool = False,
+        recompute_tms: bool = False,
+        antecedents: list[Cell] | tuple[Cell, ...] | None = None,
+        parameters: dict[str, Any] | None = None,
+        confidence_scale: float = 1.0,
+        force_assumption: bool = False,
+    ) -> bool:
+        """Emit a deduced value to a target cell with unified TMS provenance tracking.
+
+        Args:
+            target: Destination `Cell` receiving the deduced value.
+            value: Deduced `LatticeValue` to assert.
+            source: Premise source identifier (defaults to `self.name`).
+            overwrite: Whether to overwrite `target` instead of merging with its current value.
+            recompute_tms: If True, asserts into `target`'s TMS and sets `target` to
+                `tms.compute_fused_value()`.
+            antecedents: Input cells contributing to this deduction (defaults to `self.inputs`).
+            parameters: Optional rule parameters for the `Justification` record.
+            confidence_scale: Multiplicative confidence scale factor in (0.0, 1.0].
+            force_assumption: If True, forces the emitted premise to be a defeasible assumption.
+
+        Returns:
+            True if `target`'s canonical value was updated.
+        """
+        src = source or self.name
+        just, conf, is_assump, support = self.derive_provenance(
+            antecedents=antecedents,
+            parameters=parameters,
+            source=src,
+            confidence_scale=confidence_scale,
+            force_assumption=force_assumption,
+        )
+        is_direct_assumption = self.is_assumption or force_assumption
+
+        if recompute_tms:
+            tms = target.get_or_create_tms()
+            tms.assert_evidence(
+                source_id=src,
+                value=value,
+                confidence=conf,
+                is_assumption=is_assump,
+                support=support,
+                justification=just,
+            )
+            if tms.network_tms is not None and is_direct_assumption:
+                tms.network_tms.assumptions[src] = tms.premises[src]
+            return target.set_value(tms.compute_fused_value(), overwrite=True)
+
+        updated = target.set_value(
+            value,
+            source=src,
+            overwrite=overwrite,
+            justification=just,
+            confidence=conf,
+            is_assumption=is_assump,
+            support=support,
+        )
+        if is_direct_assumption and target._find().tms is not None:
+            tms = target._find().tms
+            if tms.network_tms is not None and src in tms.premises:
+                tms.network_tms.assumptions[src] = tms.premises[src]
+        return updated
 
     @abstractmethod
     def alert(self, network: PropagatorNetwork) -> None:
@@ -254,8 +410,16 @@ class ArithmeticPropagator(Propagator):
         output: Cell,
         weights: list[float] | None = None,
         offset: float = 0.0,
+        confidence: float = 1.0,
+        is_assumption: bool = False,
     ) -> None:
-        super().__init__(name, inputs, [output])
+        super().__init__(
+            name,
+            inputs,
+            [output],
+            confidence=confidence,
+            is_assumption=is_assumption,
+        )
         self.output = output
         self.weights = weights or [1.0] * len(inputs)
         self.offset = offset
@@ -265,6 +429,8 @@ class ArithmeticPropagator(Propagator):
         # Check if all inputs have values
         if any(isinstance(c.value, (Bottom, Contradiction)) for c in self.inputs):
             return
+
+        params = {"weights": self.weights, "offset": self.offset}
 
         # Case 1: Pure floats or Gaussians
         all_gaussian = all(isinstance(c.value, GaussianValue) for c in self.inputs)
@@ -281,12 +447,7 @@ class ArithmeticPropagator(Propagator):
                 var += (w**2) * val.variance
 
             new_val = GaussianValue(mean=mu, variance=max(var, 1e-6))
-            just = Justification(
-                rule_name=self.__class__.__name__,
-                antecedents=tuple(c.cell_id for c in self.inputs),
-                parameters={"weights": self.weights, "offset": self.offset},
-            )
-            self.output.set_value(new_val, source=self.name, justification=just)
+            self.emit(self.output, new_val, parameters=params)
             return
 
         # Case 2: Intervals
@@ -309,12 +470,7 @@ class ArithmeticPropagator(Propagator):
                     max_sum += w * c_min
 
             new_val = IntervalValue(min_val=min_sum, max_val=max_sum)
-            just = Justification(
-                rule_name=self.__class__.__name__,
-                antecedents=tuple(c.cell_id for c in self.inputs),
-                parameters={"weights": self.weights, "offset": self.offset},
-            )
-            self.output.set_value(new_val, source=self.name, justification=just)
+            self.emit(self.output, new_val, parameters=params)
 
 
 def _to_interval_or_none(v: LatticeValue) -> IntervalValue | None:
@@ -462,8 +618,22 @@ class AdderPropagator(Propagator):
       Backward B: b = c - a
     """
 
-    def __init__(self, name: str, a: Cell, b: Cell, c: Cell) -> None:
-        super().__init__(name, inputs=[a, b, c], outputs=[a, b, c])
+    def __init__(
+        self,
+        name: str,
+        a: Cell,
+        b: Cell,
+        c: Cell,
+        confidence: float = 1.0,
+        is_assumption: bool = False,
+    ) -> None:
+        super().__init__(
+            name,
+            inputs=[a, b, c],
+            outputs=[a, b, c],
+            confidence=confidence,
+            is_assumption=is_assumption,
+        )
         self.a = a
         self.b = b
         self.c = c
@@ -479,7 +649,7 @@ class AdderPropagator(Propagator):
         ):
             cand_c = _add_values(val_a, val_b)
             if cand_c is not None and _should_update_target(val_c, cand_c):
-                self.c.set_value(cand_c, source=self.name)
+                self.emit(self.c, cand_c, antecedents=(self.a, self.b))
                 val_c = self.c.value
 
         # 2. Backward A: c - b -> a
@@ -488,7 +658,7 @@ class AdderPropagator(Propagator):
         ):
             cand_a = _sub_values(val_c, val_b)
             if cand_a is not None and _should_update_target(val_a, cand_a):
-                self.a.set_value(cand_a, source=self.name)
+                self.emit(self.a, cand_a, antecedents=(self.c, self.b))
                 val_a = self.a.value
 
         # 3. Backward B: c - a -> b
@@ -497,7 +667,7 @@ class AdderPropagator(Propagator):
         ):
             cand_b = _sub_values(val_c, val_a)
             if cand_b is not None and _should_update_target(val_b, cand_b):
-                self.b.set_value(cand_b, source=self.name)
+                self.emit(self.b, cand_b, antecedents=(self.c, self.a))
 
 
 class MultiplierPropagator(Propagator):
@@ -509,8 +679,22 @@ class MultiplierPropagator(Propagator):
       Backward B: b = c / a (when 0 not in a)
     """
 
-    def __init__(self, name: str, a: Cell, b: Cell, c: Cell) -> None:
-        super().__init__(name, inputs=[a, b, c], outputs=[a, b, c])
+    def __init__(
+        self,
+        name: str,
+        a: Cell,
+        b: Cell,
+        c: Cell,
+        confidence: float = 1.0,
+        is_assumption: bool = False,
+    ) -> None:
+        super().__init__(
+            name,
+            inputs=[a, b, c],
+            outputs=[a, b, c],
+            confidence=confidence,
+            is_assumption=is_assumption,
+        )
         self.a = a
         self.b = b
         self.c = c
@@ -526,7 +710,7 @@ class MultiplierPropagator(Propagator):
         ):
             cand_c = _mul_values(val_a, val_b)
             if cand_c is not None and _should_update_target(val_c, cand_c):
-                self.c.set_value(cand_c, source=self.name)
+                self.emit(self.c, cand_c, antecedents=(self.a, self.b))
                 val_c = self.c.value
 
         # 2. Backward A: c / b -> a
@@ -535,7 +719,7 @@ class MultiplierPropagator(Propagator):
         ):
             cand_a = _div_values(val_c, val_b)
             if cand_a is not None and _should_update_target(val_a, cand_a):
-                self.a.set_value(cand_a, source=self.name)
+                self.emit(self.a, cand_a, antecedents=(self.c, self.b))
                 val_a = self.a.value
 
         # 3. Backward B: c / a -> b
@@ -544,7 +728,7 @@ class MultiplierPropagator(Propagator):
         ):
             cand_b = _div_values(val_c, val_a)
             if cand_b is not None and _should_update_target(val_b, cand_b):
-                self.b.set_value(cand_b, source=self.name)
+                self.emit(self.b, cand_b, antecedents=(self.c, self.a))
 
 
 _BINARY_OPS: dict[str, tuple[str, type[Propagator], bool]] = {
@@ -599,8 +783,16 @@ class SwitchPropagator(Propagator):
         input_cell: Cell,
         output_cell: Cell,
         on_value: Any = True,
+        confidence: float = 1.0,
+        is_assumption: bool = False,
     ) -> None:
-        super().__init__(name, inputs=[control_cell, input_cell], outputs=[output_cell])
+        super().__init__(
+            name,
+            inputs=[control_cell, input_cell],
+            outputs=[output_cell],
+            confidence=confidence,
+            is_assumption=is_assumption,
+        )
         self.control_cell = control_cell
         self.input_cell = input_cell
         self.output_cell = output_cell
@@ -624,7 +816,168 @@ class SwitchPropagator(Propagator):
             is_active = True
 
         if is_active and not isinstance(self.input_cell.value, (Bottom, Contradiction)):
-            self.output_cell.set_value(self.input_cell.value, source=self.name)
+            self.emit(self.output_cell, self.input_cell.value)
+
+
+class MobileLinkPropagator(Propagator):
+    """π-calculus link-mobility propagator routing a payload cell across dynamic channel targets.
+
+    Implements Milner's π-calculus link mobility (`c?(y). y!<v>`) over partial-information
+    lattices with Truth Maintenance System (TMS) handoff:
+    - Observes `channel_cell` (holding active target channel name(s) as `FlatValue`,
+      `DiscreteDomain`, `OrderedInterval`, `SetLattice`, or `BeliefMassValue`) and
+      `payload_cell` (holding the `LatticeValue` carried by the mobile entity).
+    - Asserts `payload_cell.value` into each resolved target cell's TMS via `self.emit()`.
+    - When `channel_cell` moves to a new target (or becomes `Bottom`), automatically
+      retracts the premise from vacated target cells so they relax back to their
+      remaining active premises.
+    - Supports uncertainty-aware mobility (`propagate_ambiguous=True`), projecting
+      defeasible `Assumption` premises with scaled confidence across candidate targets
+      when location/channel state is ambiguous.
+    - Supports dynamic channel creation (`spawn_missing=True`), corresponding to the
+      π-calculus restriction operator `(ν y)` by allocating missing target cells in the
+      network on demand.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        channel_cell: Cell,
+        payload_cell: Cell,
+        targets: dict[str, Cell] | list[Cell] | None = None,
+        source_id: str | None = None,
+        confidence: float = 1.0,
+        is_assumption: bool = False,
+        propagate_ambiguous: bool = False,
+        min_plausibility: float = 0.25,
+        spawn_missing: bool = False,
+    ) -> None:
+        """Initialize the π-calculus mobile link propagator.
+
+        Args:
+            name: Identifier for this propagator.
+            channel_cell: Cell carrying the active target channel identifier(s).
+            payload_cell: Cell carrying the mobile payload `LatticeValue` to assert.
+            targets: Optional mapping from channel name to target `Cell`, or list of `Cell`s.
+                If omitted, channel names are resolved against `network.cells`.
+            source_id: Base source identifier recorded in target TMS premises (defaults to `name`).
+            confidence: Base confidence in [0.0, 1.0] inherited from `Propagator`.
+            is_assumption: Whether determined bindings are recorded as defeasible assumptions.
+            propagate_ambiguous: If True, projects speculative `Assumption` premises across
+                multiple candidate targets when `channel_cell` is undetermined/ambiguous.
+            min_plausibility: Minimum Dempster-Shafer plausibility threshold in (0.0, 1.0]
+                for routing across `BeliefMassValue` candidates when `propagate_ambiguous=True`.
+            spawn_missing: If True, dynamically allocates a new `Cell` in the network when
+                `channel_cell` names a target channel that does not yet exist (`(ν y)`).
+        """
+        if isinstance(targets, dict):
+            target_map = dict(targets)
+        elif isinstance(targets, list):
+            target_map = {c.cell_id: c for c in targets}
+        else:
+            target_map = {}
+
+        super().__init__(
+            name,
+            inputs=[channel_cell, payload_cell],
+            outputs=list(target_map.values()),
+            confidence=confidence,
+            is_assumption=is_assumption,
+        )
+        self.channel_cell = channel_cell
+        self.payload_cell = payload_cell
+        self.target_map: dict[str, Cell] = target_map
+        self.source_id = source_id or name
+        self.propagate_ambiguous = propagate_ambiguous
+        self.min_plausibility = min_plausibility
+        self.spawn_missing = spawn_missing
+        self._active_bindings: dict[str, str] = {}
+
+    def _extract_bindings(self, channel_val: LatticeValue) -> dict[str, tuple[float, bool]]:
+        """Extract mapping of target_key -> (confidence_scale, force_assumption) from channel value."""
+        if isinstance(channel_val, (Bottom, Contradiction)):
+            return {}
+        if isinstance(channel_val, FlatValue):
+            raw = channel_val.val
+            items = raw if isinstance(raw, (set, frozenset, list, tuple)) else (raw,)
+            return {str(item): (1.0, False) for item in items if item is not None}
+        if isinstance(channel_val, SetLattice):
+            return {str(item): (1.0, False) for item in channel_val.elements}
+        if isinstance(channel_val, (DiscreteDomain, OrderedInterval)):
+            if channel_val.is_determined:
+                return {str(channel_val.value): (1.0, False)}
+            if not self.propagate_ambiguous:
+                return {}
+            cands = tuple(channel_val.candidates)
+            scale = 1.0 / len(cands)
+            return {str(c): (scale, True) for c in cands}
+        if isinstance(channel_val, BeliefMassValue):
+            if not self.propagate_ambiguous:
+                determined = [str(k) for k in channel_val.frame if channel_val.belief(k) >= 0.5]
+                if len(determined) != 1:
+                    return {}
+                key = determined[0]
+                bel = channel_val.belief(key)
+                return {key: (bel, bel < 1.0)}
+            return {
+                str(k): (channel_val.plausibility(k), True)
+                for k in sorted(channel_val.frame, key=str)
+                if channel_val.plausibility(k) >= self.min_plausibility
+            }
+        return {}
+
+    def _resolve_target(self, target_key: str, network: PropagatorNetwork) -> Cell | None:
+        """Resolve a target cell by key, optionally spawning a fresh cell if spawn_missing=True."""
+        cell = self.target_map.get(target_key) or network.cells.get(target_key)
+        if cell is None and self.spawn_missing:
+            cell = network.add_cell(target_key)
+            self.target_map[target_key] = cell
+        if cell is not None and cell not in self.outputs:
+            self.outputs.append(cell)
+        return cell
+
+    def alert(self, network: PropagatorNetwork) -> None:
+        """Route payload across active channel links and retract from vacated links."""
+        payload = self.payload_cell.value
+        bindings = (
+            {}
+            if isinstance(payload, (Bottom, Contradiction))
+            else self._extract_bindings(self.channel_cell.value)
+        )
+
+        # 1. Retract from vacated targets
+        for old_key in list(self._active_bindings.keys() - bindings.keys()):
+            old_premise_id = self._active_bindings.pop(old_key)
+            old_cell = self._resolve_target(old_key, network)
+            if old_cell is not None:
+                old_cell.retract_source(old_premise_id, reason="link_moved")
+
+        # 2. Assert or update active targets via unified self.emit()
+        is_multi = len(bindings) > 1
+        for target_key, (conf_scale, force_assump) in bindings.items():
+            target_cell = self._resolve_target(target_key, network)
+            if target_cell is None:
+                continue
+
+            premise_id = (
+                f"{self.source_id}@{target_key}"
+                if (is_multi or force_assump or self.is_assumption)
+                else self.source_id
+            )
+            prev_premise_id = self._active_bindings.get(target_key)
+            if prev_premise_id is not None and prev_premise_id != premise_id:
+                target_cell.retract_source(prev_premise_id, reason="link_refined")
+
+            self._active_bindings[target_key] = premise_id
+            self.emit(
+                target_cell,
+                payload,
+                source=premise_id,
+                recompute_tms=True,
+                parameters={"channel": target_key},
+                confidence_scale=conf_scale,
+                force_assumption=force_assump,
+            )
 
 
 class ConditionalPropagator(Propagator):
@@ -644,9 +997,15 @@ class ConditionalPropagator(Propagator):
         true_cell: Cell,
         false_cell: Cell,
         output_cell: Cell,
+        confidence: float = 1.0,
+        is_assumption: bool = False,
     ) -> None:
         super().__init__(
-            name, inputs=[condition_cell, true_cell, false_cell], outputs=[output_cell]
+            name,
+            inputs=[condition_cell, true_cell, false_cell],
+            outputs=[output_cell],
+            confidence=confidence,
+            is_assumption=is_assumption,
         )
         self.condition_cell = condition_cell
         self.true_cell = true_cell
@@ -660,7 +1019,11 @@ class ConditionalPropagator(Propagator):
 
         # Sussman's optimization: if both branches agree and are not Bottom, output can be set!
         if not isinstance(t_val, (Bottom, Contradiction)) and t_val == f_val:
-            self.output_cell.set_value(t_val, source=self.name)
+            self.emit(
+                self.output_cell,
+                t_val,
+                antecedents=(self.true_cell, self.false_cell),
+            )
             return
 
         if isinstance(cond, (Bottom, Contradiction)):
@@ -682,9 +1045,17 @@ class ConditionalPropagator(Propagator):
                 cond_bool = False
 
         if cond_bool is True and not isinstance(t_val, (Bottom, Contradiction)):
-            self.output_cell.set_value(t_val, source=self.name)
+            self.emit(
+                self.output_cell,
+                t_val,
+                antecedents=(self.condition_cell, self.true_cell),
+            )
         elif cond_bool is False and not isinstance(f_val, (Bottom, Contradiction)):
-            self.output_cell.set_value(f_val, source=self.name)
+            self.emit(
+                self.output_cell,
+                f_val,
+                antecedents=(self.condition_cell, self.false_cell),
+            )
 
 
 class FunctionalPropagator(Propagator):
@@ -697,8 +1068,16 @@ class FunctionalPropagator(Propagator):
         inputs: list[Cell],
         output: Cell,
         overwrite: bool = True,
+        confidence: float = 1.0,
+        is_assumption: bool = False,
     ) -> None:
-        super().__init__(name, inputs=inputs, outputs=[output])
+        super().__init__(
+            name,
+            inputs=inputs,
+            outputs=[output],
+            confidence=confidence,
+            is_assumption=is_assumption,
+        )
         self.fn = fn
         self.output = output
         self.overwrite = overwrite
@@ -710,7 +1089,7 @@ class FunctionalPropagator(Propagator):
         try:
             res = self.fn(*args)
             if isinstance(res, LatticeValue) and not isinstance(res, Bottom):
-                self.output.set_value(res, source=self.name, overwrite=self.overwrite)
+                self.emit(self.output, res, overwrite=self.overwrite)
         except (TypeError, ValueError, ArithmeticError):
             pass
 
@@ -721,9 +1100,19 @@ def lift_propagator(
     inputs: list[Cell],
     output: Cell,
     overwrite: bool = True,
+    confidence: float = 1.0,
+    is_assumption: bool = False,
 ) -> FunctionalPropagator:
     """Lift a function over lattice values into a reactive propagator."""
-    return FunctionalPropagator(name, fn, inputs, output, overwrite=overwrite)
+    return FunctionalPropagator(
+        name,
+        fn,
+        inputs,
+        output,
+        overwrite=overwrite,
+        confidence=confidence,
+        is_assumption=is_assumption,
+    )
 
 
 class RatePropagator(Propagator):
@@ -740,11 +1129,19 @@ class RatePropagator(Propagator):
         output_rate_cell: Cell,
         output_eta_cell: Cell | None = None,
         threshold: float = 0.0,
+        confidence: float = 1.0,
+        is_assumption: bool = False,
     ) -> None:
         outputs = [output_rate_cell]
         if output_eta_cell:
             outputs.append(output_eta_cell)
-        super().__init__(name, [input_cell], outputs)
+        super().__init__(
+            name,
+            [input_cell],
+            outputs,
+            confidence=confidence,
+            is_assumption=is_assumption,
+        )
 
         self.input_cell = input_cell
         self.output_rate = output_rate_cell
@@ -763,9 +1160,9 @@ class RatePropagator(Propagator):
             if dt > 0:
                 dx = current_val - self._prev_val
                 rate = dx / dt
-                self.output_rate.set_value(
+                self.emit(
+                    self.output_rate,
                     GaussianValue(mean=rate, variance=max(abs(rate) * 0.1, 0.01)),
-                    source=self.name,
                     overwrite=True,
                 )
 
@@ -775,15 +1172,15 @@ class RatePropagator(Propagator):
                     if dist_to_thresh > 0 and rate < -1e-4:
                         eta_sec = abs(dist_to_thresh / rate)
                         # Bounds [eta * 0.85, eta * 1.2]
-                        self.output_eta.set_value(
+                        self.emit(
+                            self.output_eta,
                             IntervalValue(min_val=eta_sec * 0.85, max_val=eta_sec * 1.2),
-                            source=self.name,
                             overwrite=True,
                         )
                     elif dist_to_thresh <= 0:
-                        self.output_eta.set_value(
+                        self.emit(
+                            self.output_eta,
                             IntervalValue(min_val=0.0, max_val=0.0),
-                            source=self.name,
                             overwrite=True,
                         )
 
@@ -818,8 +1215,16 @@ class LagPropagator(Propagator):
         state_cell: Cell,
         output_cell: Cell,
         tau: float,  # Time constant (in seconds or hours)
+        confidence: float = 1.0,
+        is_assumption: bool = False,
     ) -> None:
-        super().__init__(name, [target_cell, state_cell], [output_cell])
+        super().__init__(
+            name,
+            [target_cell, state_cell],
+            [output_cell],
+            confidence=confidence,
+            is_assumption=is_assumption,
+        )
         self.target_cell = target_cell
         self.state_cell = state_cell
         self.output_cell = output_cell
@@ -834,29 +1239,25 @@ class LagPropagator(Propagator):
             return
 
         alpha = 1.0 - math.exp(-dt / self.tau)
-        just = Justification(
-            rule_name=self.__class__.__name__,
-            antecedents=(self.target_cell.cell_id, self.state_cell.cell_id),
-            parameters={"tau": self.tau, "dt": dt, "alpha": round(alpha, 4)},
-        )
+        params = {"tau": self.tau, "dt": dt, "alpha": round(alpha, 4)}
 
         if isinstance(t_val, GaussianValue) and isinstance(s_val, GaussianValue):
             next_mu = s_val.mean + alpha * (t_val.mean - s_val.mean)
             next_var = s_val.variance * (1 - alpha) ** 2 + t_val.variance * (alpha**2)
-            self.output_cell.set_value(
+            self.emit(
+                self.output_cell,
                 GaussianValue(mean=next_mu, variance=max(next_var, 1e-4)),
-                source=self.name,
                 overwrite=True,
-                justification=just,
+                parameters=params,
             )
         elif isinstance(t_val, IntervalValue) and isinstance(s_val, IntervalValue):
             next_min = s_val.min_val + alpha * (t_val.min_val - s_val.min_val)
             next_max = s_val.max_val + alpha * (t_val.max_val - s_val.max_val)
-            self.output_cell.set_value(
+            self.emit(
+                self.output_cell,
                 IntervalValue(min_val=next_min, max_val=next_max),
-                source=self.name,
                 overwrite=True,
-                justification=just,
+                parameters=params,
             )
 
     def alert(self, network: PropagatorNetwork) -> None:
@@ -924,6 +1325,8 @@ class TrajectoryEnvelopePropagator(Propagator):
         initial_bounds: IntervalValue | float | None = None,
         clamp_bounds: IntervalValue | None = None,
         loop: bool = False,
+        confidence: float = 1.0,
+        is_assumption: bool = False,
     ) -> None:
         """Initialize the trajectory envelope propagator.
 
@@ -937,6 +1340,8 @@ class TrajectoryEnvelopePropagator(Propagator):
             initial_bounds: Starting bounds at t=0. Defaults to segments[0].bounds if None.
             clamp_bounds: Optional envelope boundary to clamp all evaluated intervals.
             loop: If True, wraps time modulo total duration. If False, holds final segment bounds.
+            confidence: Base confidence in [0.0, 1.0] inherited from `Propagator`.
+            is_assumption: Whether emitted bounds are recorded as defeasible assumptions.
         """
         if not segments:
             raise ValueError("TrajectoryEnvelopePropagator requires at least one TrajectorySegment")
@@ -949,7 +1354,13 @@ class TrajectoryEnvelopePropagator(Propagator):
         if phase_cell is not None:
             outputs.append(phase_cell)
 
-        super().__init__(name, inputs, outputs)
+        super().__init__(
+            name,
+            inputs,
+            outputs,
+            confidence=confidence,
+            is_assumption=is_assumption,
+        )
         self.time_cell = time_cell
         self.output_cell = output_cell
         self.segments = segments
@@ -1122,18 +1533,14 @@ class TrajectoryEnvelopePropagator(Propagator):
         else:
             return
 
-        just = Justification(
-            rule_name=self.__class__.__name__,
-            antecedents=tuple(c.cell_id for c in self.inputs),
-            parameters={"segment": seg.name or "active"},
-        )
-        self.output_cell.set_value(bounds, source=self.name, overwrite=True, justification=just)
+        params = {"segment": seg.name or "active"}
+        self.emit(self.output_cell, bounds, overwrite=True, parameters=params)
         if self.phase_cell is not None and seg.name:
-            self.phase_cell.set_value(
+            self.emit(
+                self.phase_cell,
                 DiscreteDomain.single(seg.name),
-                source=self.name,
                 overwrite=True,
-                justification=just,
+                parameters=params,
             )
 
 
@@ -1155,8 +1562,16 @@ class KalmanEstimatorPropagator(Propagator):
         default_measurement_noise_r: float = 1.0,
         initial_state: tuple[float, float] = (0.0, 0.0),
         initial_cov: tuple[float, float] = (100.0, 10.0),
+        confidence: float = 1.0,
+        is_assumption: bool = False,
     ) -> None:
-        super().__init__(name, [measurement_cell], [output_state_cell, output_rate_cell])
+        super().__init__(
+            name,
+            [measurement_cell],
+            [output_state_cell, output_rate_cell],
+            confidence=confidence,
+            is_assumption=is_assumption,
+        )
         self.measurement_cell = measurement_cell
         self.output_state_cell = output_state_cell
         self.output_rate_cell = output_rate_cell
@@ -1234,14 +1649,14 @@ class KalmanEstimatorPropagator(Propagator):
 
     def _publish(self) -> None:
         """Project marginal distributions to output cells."""
-        self.output_state_cell.set_value(
+        self.emit(
+            self.output_state_cell,
             GaussianValue(mean=self.x, variance=self.p00),
-            source=self.name,
             overwrite=True,
         )
-        self.output_rate_cell.set_value(
+        self.emit(
+            self.output_rate_cell,
             GaussianValue(mean=self.v, variance=self.p11),
-            source=self.name,
             overwrite=True,
         )
 
@@ -1301,9 +1716,17 @@ class DempsterShaferPropagator(Propagator):
         output: Cell,
         conflict_cell: Cell | None = None,
         conflict_threshold: float = 0.95,
+        confidence: float = 1.0,
+        is_assumption: bool = False,
     ) -> None:
         out_cells = [output] if conflict_cell is None else [output, conflict_cell]
-        super().__init__(name, inputs=inputs, outputs=out_cells)
+        super().__init__(
+            name,
+            inputs=inputs,
+            outputs=out_cells,
+            confidence=confidence,
+            is_assumption=is_assumption,
+        )
         self.output_cell = output
         self.conflict_cell = conflict_cell
         self.conflict_threshold = conflict_threshold
@@ -1316,7 +1739,7 @@ class DempsterShaferPropagator(Propagator):
             if isinstance(val, BeliefMassValue):
                 active_masses.append(val)
             elif isinstance(val, Contradiction):
-                self.output_cell.set_value(val, source=self.name)
+                self.emit(self.output_cell, val)
                 return
 
         if not active_masses:
@@ -1334,9 +1757,9 @@ class DempsterShaferPropagator(Propagator):
                     break
 
         if self.conflict_cell is not None:
-            self.conflict_cell.set_value(
+            self.emit(
+                self.conflict_cell,
                 FlatValue(round(max_conflict, 4)),
-                source=self.name,
                 overwrite=True,
             )
 
@@ -1349,7 +1772,7 @@ class DempsterShaferPropagator(Propagator):
                 conflicting_values=tuple(active_masses),
             )
 
-        self.output_cell.set_value(current, source=self.name, overwrite=True)
+        self.emit(self.output_cell, current, overwrite=True)
 
 
 class BoundedLinearPropagator(Propagator):
@@ -1367,8 +1790,16 @@ class BoundedLinearPropagator(Propagator):
         nominal_target: float,
         baseline_signal: float,
         sensitivity: float,
+        confidence: float = 1.0,
+        is_assumption: bool = False,
     ) -> None:
-        super().__init__(name, [signal_cell], [output_cell])
+        super().__init__(
+            name,
+            [signal_cell],
+            [output_cell],
+            confidence=confidence,
+            is_assumption=is_assumption,
+        )
         self.signal_cell = signal_cell
         self.output_cell = output_cell
         self.acceptable_range = acceptable_range
@@ -1392,9 +1823,9 @@ class BoundedLinearPropagator(Propagator):
             min(self.acceptable_range.max_val, modulated),
         )
 
-        self.output_cell.set_value(
+        self.emit(
+            self.output_cell,
             GaussianValue(mean=clamped, variance=0.04),
-            source=self.name,
             overwrite=True,
         )
 
@@ -1409,8 +1840,16 @@ class ThresholdPropagator(Propagator):
         output_bool_cell: Cell,
         threshold: float,
         below: bool = True,
+        confidence: float = 1.0,
+        is_assumption: bool = False,
     ) -> None:
-        super().__init__(name, [input_cell], [output_bool_cell])
+        super().__init__(
+            name,
+            [input_cell],
+            [output_bool_cell],
+            confidence=confidence,
+            is_assumption=is_assumption,
+        )
         self.input_cell = input_cell
         self.output_bool = output_bool_cell
         self.threshold = threshold
@@ -1424,19 +1863,14 @@ class ThresholdPropagator(Propagator):
 
         scalar = val.mean if isinstance(val, GaussianValue) else val.center
         is_triggered = (scalar < self.threshold) if self.below else (scalar > self.threshold)
-        just = Justification(
-            rule_name=self.__class__.__name__,
-            antecedents=(self.input_cell.cell_id,),
-            parameters={"threshold": self.threshold, "below": self.below},
-        )
         # 1.0 = True, 0.0 = False in numeric interval
-        self.output_bool.set_value(
+        self.emit(
+            self.output_bool,
             IntervalValue(
                 min_val=1.0 if is_triggered else 0.0, max_val=1.0 if is_triggered else 0.0
             ),
-            source=self.name,
             overwrite=True,
-            justification=just,
+            parameters={"threshold": self.threshold, "below": self.below},
         )
 
 
@@ -1451,8 +1885,20 @@ class AllDifferentPropagator(Propagator):
     3. Contradiction Detection: Signals Contradiction on duplicate determined values or exhausted domains.
     """
 
-    def __init__(self, name: str, cells: list[Cell]) -> None:
-        super().__init__(name, cells, cells)
+    def __init__(
+        self,
+        name: str,
+        cells: list[Cell],
+        confidence: float = 1.0,
+        is_assumption: bool = False,
+    ) -> None:
+        super().__init__(
+            name,
+            cells,
+            cells,
+            confidence=confidence,
+            is_assumption=is_assumption,
+        )
         self.cells = cells
 
     def _collect_determined(self) -> dict[Any, Cell] | None:

@@ -12,6 +12,7 @@ Reactive containers, worklist fixed-point engine, and built-in constraint propag
         - AdderPropagator
         - MultiplierPropagator
         - SwitchPropagator
+        - MobileLinkPropagator
         - ConditionalPropagator
         - FunctionalPropagator
         - lift_propagator

@@ -836,11 +836,11 @@ class NetworkTMS:
         # Propagate into the cell if network is bound
         if self.network and cell_id in self.network.cells:
             cell = self.network.cells[cell_id]
-            cell.set_value(ctms.compute_fused_value(), source=assumption_id, overwrite=True)
+            cell.set_value(ctms.compute_fused_value(), overwrite=True)
         return True
 
     def retract(self, assumption_id: str, reason: str = "retracted") -> bool:
-        """Retract an active assumption across the network."""
+        """Retract an active assumption and any derived premises supported by it across the network."""
         found = False
         if assumption_id in self.assumptions:
             self.assumptions[assumption_id].is_active = False
@@ -848,12 +848,15 @@ class NetworkTMS:
             found = True
 
         for ctms in self.cell_tms.values():
-            if assumption_id in ctms.premises:
-                ctms.retract_evidence(assumption_id, reason=reason)
-                found = True
-                if self.network and ctms.cell_id in self.network.cells:
-                    cell = self.network.cells[ctms.cell_id]
-                    cell.set_value(ctms.compute_fused_value(), source="retract", overwrite=True)
+            retracted_in_cell = False
+            for src_id, prem in ctms.premises.items():
+                if src_id == assumption_id or (prem.is_active and assumption_id in prem.support):
+                    ctms.retract_evidence(src_id, reason=reason)
+                    retracted_in_cell = True
+                    found = True
+            if retracted_in_cell and self.network and ctms.cell_id in self.network.cells:
+                cell = self.network.cells[ctms.cell_id]
+                cell.set_value(ctms.compute_fused_value(), overwrite=True)
         return found
 
     def record_nogood(self, conflict_sources: Iterable[str]) -> frozenset[str]:
@@ -872,11 +875,24 @@ class NetworkTMS:
         """Dependency-Directed Backtracking (DDB): resolve contradiction by retracting the lowest-confidence assumption."""
         self.record_nogood(conflict_sources)
 
-        # Identify active assumptions involved in the conflict
+        # Identify active assumptions involved directly or via transitive support in the conflict
+        seen_ids: set[str] = set()
         culprits: list[Premise] = []
         for src in conflict_sources:
-            if src in self.assumptions and self.assumptions[src].is_active:
+            if src in self.assumptions and self.assumptions[src].is_active and src not in seen_ids:
+                seen_ids.add(src)
                 culprits.append(self.assumptions[src])
+            for ctms in self.cell_tms.values():
+                prem = ctms.premises.get(src)
+                if prem is not None and prem.is_active:
+                    for sup_id in prem.support:
+                        if (
+                            sup_id in self.assumptions
+                            and self.assumptions[sup_id].is_active
+                            and sup_id not in seen_ids
+                        ):
+                            seen_ids.add(sup_id)
+                            culprits.append(self.assumptions[sup_id])
 
         if not culprits:
             # Contradiction between non-defeasible ground premises! Cannot be resolved.
