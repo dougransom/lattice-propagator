@@ -18,7 +18,7 @@ Implements mathematical partial orders:
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -447,7 +447,7 @@ class MapLattice(LatticeValue):
     If any key merge results in a Contradiction, the entire map becomes a Contradiction.
     """
 
-    mapping: dict[Any, LatticeValue] = field(default_factory=dict)
+    mapping: Mapping[Any, LatticeValue] = field(default_factory=dict)
 
     def __repr__(self) -> str:
         pairs = [f"{k}: {v}" for k, v in self.mapping.items()]
@@ -463,7 +463,7 @@ class BeliefMassValue(LatticeValue):
     (vacuous belief) is represented by assigning mass 1.0 to the entire frame Θ.
     """
 
-    masses: dict[frozenset[str], float] = field(default_factory=dict)
+    masses: Mapping[frozenset[str], float] = field(default_factory=dict)
     frame: frozenset[str] = field(default_factory=frozenset)
 
     def __post_init__(self) -> None:
@@ -752,7 +752,7 @@ def _merge_belief_masses(a: BeliefMassValue, b: BeliefMassValue) -> LatticeValue
     return a.combine(b)
 
 
-MERGE_DISPATCH: dict[type, Callable[[Any, Any], LatticeValue]] = {
+MERGE_DISPATCH: Mapping[type, Callable[[Any, Any], LatticeValue]] = {
     GaussianValue: _merge_gaussians,
     IntervalValue: _merge_intervals,
     CircularInterval: _merge_circular_intervals,

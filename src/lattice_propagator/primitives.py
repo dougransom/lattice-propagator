@@ -24,7 +24,7 @@ from __future__ import annotations
 import math
 from abc import ABC, abstractmethod
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -52,14 +52,14 @@ class Cell:
         self,
         cell_id: str,
         value: LatticeValue = BOTTOM,
-        propagators: list[Propagator] | None = None,
+        propagators: Sequence[Propagator] | None = None,
         network: PropagatorNetwork | None = None,
         unit: str = "",
         display_name: str | None = None,
     ) -> None:
         self.cell_id = cell_id
         self._value = value
-        self.propagators: list[Propagator] = propagators if propagators is not None else []
+        self.propagators: list[Propagator] = list(propagators) if propagators is not None else []
         self.network = network
         self.unit = unit
         self.display_name = display_name
@@ -260,14 +260,14 @@ class Propagator(ABC):
     def __init__(
         self,
         name: str,
-        inputs: list[Cell],
-        outputs: list[Cell],
+        inputs: Sequence[Cell],
+        outputs: Sequence[Cell],
         confidence: float = 1.0,
         is_assumption: bool = False,
     ) -> None:
         self.name = name
-        self.inputs = inputs
-        self.outputs = outputs
+        self.inputs = list(inputs)
+        self.outputs = list(outputs)
         self.confidence = confidence
         self.is_assumption = is_assumption
         for c in inputs:
@@ -275,8 +275,8 @@ class Propagator(ABC):
 
     def derive_provenance(
         self,
-        antecedents: list[Cell] | tuple[Cell, ...] | None = None,
-        parameters: dict[str, Any] | None = None,
+        antecedents: Sequence[Cell] | None = None,
+        parameters: Mapping[str, Any] | None = None,
         source: str | None = None,
         confidence_scale: float = 1.0,
         force_assumption: bool = False,
@@ -334,8 +334,8 @@ class Propagator(ABC):
         source: str | None = None,
         overwrite: bool = False,
         recompute_tms: bool = False,
-        antecedents: list[Cell] | tuple[Cell, ...] | None = None,
-        parameters: dict[str, Any] | None = None,
+        antecedents: Sequence[Cell] | None = None,
+        parameters: Mapping[str, Any] | None = None,
         confidence_scale: float = 1.0,
         force_assumption: bool = False,
     ) -> bool:
@@ -406,9 +406,9 @@ class ArithmeticPropagator(Propagator):
     def __init__(
         self,
         name: str,
-        inputs: list[Cell],
+        inputs: Sequence[Cell],
         output: Cell,
-        weights: list[float] | None = None,
+        weights: Sequence[float] | None = None,
         offset: float = 0.0,
         confidence: float = 1.0,
         is_assumption: bool = False,
@@ -421,7 +421,7 @@ class ArithmeticPropagator(Propagator):
             is_assumption=is_assumption,
         )
         self.output = output
-        self.weights = weights or [1.0] * len(inputs)
+        self.weights = list(weights) if weights is not None else [1.0] * len(inputs)
         self.offset = offset
 
     def alert(self, network: PropagatorNetwork) -> None:
@@ -456,18 +456,16 @@ class ArithmeticPropagator(Propagator):
             min_sum = self.offset
             max_sum = self.offset
             for c, w in zip(self.inputs, self.weights, strict=False):
-                if isinstance(c.value, IntervalValue):
-                    c_min, c_max = c.value.min_val, c.value.max_val
-                else:
-                    assert isinstance(c.value, GaussianValue)
-                    c_min, c_max = c.value.confidence_interval(0.95)
-
-                if w >= 0:
-                    min_sum += w * c_min
-                    max_sum += w * c_max
-                else:
-                    min_sum += w * c_max
-                    max_sum += w * c_min
+                c_min, c_max = (
+                    (c.value.min_val, c.value.max_val)
+                    if isinstance(c.value, IntervalValue)
+                    else c.value.confidence_interval(0.95)
+                )
+                min_sum, max_sum = (
+                    (min_sum + w * c_min, max_sum + w * c_max)
+                    if w >= 0
+                    else (min_sum + w * c_max, max_sum + w * c_min)
+                )
 
             new_val = IntervalValue(min_val=min_sum, max_val=max_sum)
             self.emit(self.output, new_val, parameters=params)
@@ -731,7 +729,7 @@ class MultiplierPropagator(Propagator):
                 self.emit(self.b, cand_b, antecedents=(self.c, self.a))
 
 
-_BINARY_OPS: dict[str, tuple[str, type[Propagator], bool]] = {
+_BINARY_OPS: Mapping[str, tuple[str, type[Propagator], bool]] = {
     "add": ("+", AdderPropagator, False),
     "sub": ("-", AdderPropagator, True),
     "mul": ("*", MultiplierPropagator, False),
@@ -803,17 +801,18 @@ class SwitchPropagator(Propagator):
         if isinstance(ctrl, (Bottom, Contradiction)):
             return
 
-        is_active = False
-        if isinstance(ctrl, FlatValue):
-            is_active = ctrl.val == self.on_value
-        elif isinstance(ctrl, DiscreteDomain):
-            is_active = ctrl.is_determined and ctrl.value == self.on_value
-        elif isinstance(ctrl, IntervalValue):
-            is_active = math.isclose(
-                ctrl.min_val, float(self.on_value), abs_tol=1e-9
-            ) and math.isclose(ctrl.max_val, float(self.on_value), abs_tol=1e-9)
-        elif ctrl == self.on_value:
-            is_active = True
+        is_active = (
+            ctrl.val == self.on_value
+            if isinstance(ctrl, FlatValue)
+            else (ctrl.is_determined and ctrl.value == self.on_value)
+            if isinstance(ctrl, DiscreteDomain)
+            else (
+                math.isclose(ctrl.min_val, float(self.on_value), abs_tol=1e-9)
+                and math.isclose(ctrl.max_val, float(self.on_value), abs_tol=1e-9)
+            )
+            if isinstance(ctrl, IntervalValue)
+            else (ctrl == self.on_value)
+        )
 
         if is_active and not isinstance(self.input_cell.value, (Bottom, Contradiction)):
             self.emit(self.output_cell, self.input_cell.value)
@@ -844,7 +843,7 @@ class MobileLinkPropagator(Propagator):
         name: str,
         channel_cell: Cell,
         payload_cell: Cell,
-        targets: dict[str, Cell] | list[Cell] | None = None,
+        targets: Mapping[str, Cell] | Sequence[Cell] | None = None,
         source_id: str | None = None,
         confidence: float = 1.0,
         is_assumption: bool = False,
@@ -858,7 +857,7 @@ class MobileLinkPropagator(Propagator):
             name: Identifier for this propagator.
             channel_cell: Cell carrying the active target channel identifier(s).
             payload_cell: Cell carrying the mobile payload `LatticeValue` to assert.
-            targets: Optional mapping from channel name to target `Cell`, or list of `Cell`s.
+            targets: Optional mapping from channel name to target `Cell`, or sequence of `Cell`s.
                 If omitted, channel names are resolved against `network.cells`.
             source_id: Base source identifier recorded in target TMS premises (defaults to `name`).
             confidence: Base confidence in [0.0, 1.0] inherited from `Propagator`.
@@ -870,12 +869,13 @@ class MobileLinkPropagator(Propagator):
             spawn_missing: If True, dynamically allocates a new `Cell` in the network when
                 `channel_cell` names a target channel that does not yet exist (`(ν y)`).
         """
-        if isinstance(targets, dict):
-            target_map = dict(targets)
-        elif isinstance(targets, list):
-            target_map = {c.cell_id: c for c in targets}
-        else:
-            target_map = {}
+        target_map = (
+            dict(targets)
+            if isinstance(targets, Mapping)
+            else {c.cell_id: c for c in targets}
+            if isinstance(targets, Sequence)
+            else {}
+        )
 
         super().__init__(
             name,
@@ -893,7 +893,7 @@ class MobileLinkPropagator(Propagator):
         self.spawn_missing = spawn_missing
         self._active_bindings: dict[str, str] = {}
 
-    def _extract_bindings(self, channel_val: LatticeValue) -> dict[str, tuple[float, bool]]:
+    def _extract_bindings(self, channel_val: LatticeValue) -> Mapping[str, tuple[float, bool]]:
         """Extract mapping of target_key -> (confidence_scale, force_assumption) from channel value."""
         if isinstance(channel_val, (Bottom, Contradiction)):
             return {}
@@ -1044,17 +1044,18 @@ class ConditionalPropagator(Propagator):
             ):
                 cond_bool = False
 
-        if cond_bool is True and not isinstance(t_val, (Bottom, Contradiction)):
+        selected_cell, selected_val = (
+            (self.true_cell, t_val)
+            if cond_bool is True
+            else (self.false_cell, f_val)
+            if cond_bool is False
+            else (None, None)
+        )
+        if selected_cell is not None and not isinstance(selected_val, (Bottom, Contradiction)):
             self.emit(
                 self.output_cell,
-                t_val,
-                antecedents=(self.condition_cell, self.true_cell),
-            )
-        elif cond_bool is False and not isinstance(f_val, (Bottom, Contradiction)):
-            self.emit(
-                self.output_cell,
-                f_val,
-                antecedents=(self.condition_cell, self.false_cell),
+                selected_val,
+                antecedents=(self.condition_cell, selected_cell),
             )
 
 
@@ -1065,7 +1066,7 @@ class FunctionalPropagator(Propagator):
         self,
         name: str,
         fn: Callable[..., LatticeValue],
-        inputs: list[Cell],
+        inputs: Sequence[Cell],
         output: Cell,
         overwrite: bool = True,
         confidence: float = 1.0,
@@ -1097,7 +1098,7 @@ class FunctionalPropagator(Propagator):
 def lift_propagator(
     name: str,
     fn: Callable[..., LatticeValue],
-    inputs: list[Cell],
+    inputs: Sequence[Cell],
     output: Cell,
     overwrite: bool = True,
     confidence: float = 1.0,
@@ -1190,11 +1191,14 @@ class RatePropagator(Propagator):
     def alert(self, network: PropagatorNetwork) -> None:
         """Triggered when input cell updates."""
         val = self.input_cell.value
-        if isinstance(val, GaussianValue):
-            scalar = val.mean
-        elif isinstance(val, IntervalValue):
-            scalar = val.center
-        else:
+        scalar = (
+            val.mean
+            if isinstance(val, GaussianValue)
+            else val.center
+            if isinstance(val, IntervalValue)
+            else None
+        )
+        if scalar is None:
             return
 
         import time
@@ -1319,7 +1323,7 @@ class TrajectoryEnvelopePropagator(Propagator):
         name: str,
         time_cell: Cell,
         output_cell: Cell,
-        segments: list[TrajectorySegment],
+        segments: Sequence[TrajectorySegment],
         enable_cell: Cell | None = None,
         phase_cell: Cell | None = None,
         initial_bounds: IntervalValue | float | None = None,
@@ -1334,7 +1338,7 @@ class TrajectoryEnvelopePropagator(Propagator):
             name: Identifier for this propagator.
             time_cell: Reactive Cell carrying elapsed time Δt (FlatValue or IntervalValue).
             output_cell: Output Cell receiving the evaluated IntervalValue envelope.
-            segments: Ordered list of TrajectorySegment instances defining the profile.
+            segments: Ordered sequence of TrajectorySegment instances defining the profile.
             enable_cell: Optional Cell gating activation (DiscreteDomain or FlatValue).
             phase_cell: Optional Cell receiving the active segment name as a DiscreteDomain.
             initial_bounds: Starting bounds at t=0. Defaults to segments[0].bounds if None.
@@ -1363,22 +1367,23 @@ class TrajectoryEnvelopePropagator(Propagator):
         )
         self.time_cell = time_cell
         self.output_cell = output_cell
-        self.segments = segments
+        self.segments = list(segments)
         self.enable_cell = enable_cell
         self.phase_cell = phase_cell
         self.loop = loop
         self.clamp_bounds = clamp_bounds
 
-        if initial_bounds is None:
-            self.initial_bounds = segments[0].bounds
-        elif isinstance(initial_bounds, (int, float)):
-            self.initial_bounds = IntervalValue(float(initial_bounds), float(initial_bounds))
-        elif isinstance(initial_bounds, IntervalValue):
-            self.initial_bounds = initial_bounds
-        else:
+        if not (initial_bounds is None or isinstance(initial_bounds, (int, float, IntervalValue))):
             raise TypeError(
                 f"initial_bounds must be IntervalValue or float, got {type(initial_bounds)}"
             )
+        self.initial_bounds = (
+            segments[0].bounds
+            if initial_bounds is None
+            else IntervalValue(float(initial_bounds), float(initial_bounds))
+            if isinstance(initial_bounds, (int, float))
+            else initial_bounds
+        )
 
         self.total_duration = sum(max(0.0, s.duration) for s in self.segments)
 
@@ -1401,20 +1406,21 @@ class TrajectoryEnvelopePropagator(Propagator):
 
     def step(self, dt: float) -> None:
         """Advance time cell by dt seconds."""
-        cur_t = 0.0
         val = self.time_cell.value
-        if isinstance(val, FlatValue) and isinstance(val.val, (int, float)):
-            cur_t = float(val.val)
-        elif isinstance(val, IntervalValue):
-            cur_t = float(val.center)
+        cur_t = (
+            float(val.val)
+            if isinstance(val, FlatValue) and isinstance(val.val, (int, float))
+            else float(val.center)
+            if isinstance(val, IntervalValue)
+            else 0.0
+        )
         self.set_time(cur_t + max(0.0, dt))
 
     def _locate_segment(self, t: float) -> tuple[TrajectorySegment, IntervalValue, float]:
         """Locate active segment, previous boundary bounds, and segment start timestamp."""
-        if self.loop and self.total_duration > 0:
-            effective_t = t % self.total_duration
-        else:
-            effective_t = max(0.0, t)
+        effective_t = (
+            (t % self.total_duration) if (self.loop and self.total_duration > 0) else max(0.0, t)
+        )
 
         accum = 0.0
         active_seg = self.segments[-1]
@@ -1712,7 +1718,7 @@ class DempsterShaferPropagator(Propagator):
     def __init__(
         self,
         name: str,
-        inputs: list[Cell],
+        inputs: Sequence[Cell],
         output: Cell,
         conflict_cell: Cell | None = None,
         conflict_threshold: float = 0.95,
@@ -1888,20 +1894,21 @@ class AllDifferentPropagator(Propagator):
     def __init__(
         self,
         name: str,
-        cells: list[Cell],
+        cells: Sequence[Cell],
         confidence: float = 1.0,
         is_assumption: bool = False,
     ) -> None:
+        cells_list = list(cells)
         super().__init__(
             name,
-            cells,
-            cells,
+            cells_list,
+            cells_list,
             confidence=confidence,
             is_assumption=is_assumption,
         )
-        self.cells = cells
+        self.cells = cells_list
 
-    def _collect_determined(self) -> dict[Any, Cell] | None:
+    def _collect_determined(self) -> Mapping[Any, Cell] | None:
         """Collect determined values, returning None and setting contradiction on duplicates."""
         determined: dict[Any, Cell] = {}
         for cell in self.cells:
@@ -2102,11 +2109,11 @@ class ChoiceEngine:
     def __init__(
         self,
         network: PropagatorNetwork,
-        variables: list[Cell] | None = None,
+        variables: Sequence[Cell] | None = None,
         max_depth: int = 100,
     ) -> None:
         self.network = network
-        self.variables = variables
+        self.variables = list(variables) if variables is not None else None
         self.max_depth = max_depth
 
     def is_solved(self) -> bool:

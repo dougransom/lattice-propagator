@@ -7,7 +7,9 @@ Ensures that:
 """
 
 import re
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -18,17 +20,17 @@ DOCS_DIR = REPO_ROOT / "docs"
 MKDOCS_FILE = REPO_ROOT / "mkdocs.yml"
 
 
-def _extract_nav_paths(nav_item: list | dict | str) -> list[str]:
+def _extract_nav_paths(nav_item: Sequence[Any] | Mapping[str, Any] | str) -> list[str]:
     """Recursively extract all target .md filepaths from mkdocs nav structure."""
     paths = []
     if isinstance(nav_item, str):
         paths.append(nav_item)
-    elif isinstance(nav_item, list):
-        for item in nav_item:
-            paths.extend(_extract_nav_paths(item))
-    elif isinstance(nav_item, dict):
+    elif isinstance(nav_item, Mapping):
         for value in nav_item.values():
             paths.extend(_extract_nav_paths(value))
+    elif isinstance(nav_item, Sequence):
+        for item in nav_item:
+            paths.extend(_extract_nav_paths(item))
     return paths
 
 

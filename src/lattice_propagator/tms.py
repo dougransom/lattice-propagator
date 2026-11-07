@@ -15,7 +15,7 @@ Provides human-readable plain-English explanations and Mermaid diagram generatio
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -59,7 +59,7 @@ class Justification:
 
     rule_name: str
     antecedents: tuple[str, ...] = field(default_factory=tuple)
-    parameters: dict[str, Any] = field(default_factory=dict)
+    parameters: Mapping[str, Any] = field(default_factory=dict)
 
 
 Translator = Callable[[str, str, Mapping[str, Any]], str]
@@ -82,7 +82,7 @@ def make_template_translator(templates: Mapping[str, str]) -> Translator:
     return _translate
 
 
-DEFAULT_EXPLANATION_TEMPLATES: dict[str, str] = {
+DEFAULT_EXPLANATION_TEMPLATES: Mapping[str, str] = {
     "tms.no_active_sensors": "{prefix}No active sensors reporting for {cell_name}. Reverted to prior ({prior}).",
     "tms.contradiction": "{prefix}Contradiction detected on {cell_name}. Conflicting premises: {premises}. {recommendation}",
     "tms.recommend_retract": "Recommendation: Retract assumption '{source_id}' (confidence={confidence:.2f}).",
@@ -123,7 +123,7 @@ class ExplanationNode:
     """
 
     key: str
-    parameters: dict[str, Any]
+    parameters: Mapping[str, Any]
     default_template: str
     cell_id: str
     display_name: str | None = None
@@ -131,9 +131,9 @@ class ExplanationNode:
     is_contradiction: bool = False
     is_degraded: bool = False
     rule_name: str | None = None
-    rule_parameters: dict[str, Any] | None = None
+    rule_parameters: Mapping[str, Any] | None = None
     indent_offset: int = 0
-    children: list[ExplanationNode] = field(default_factory=list)
+    children: Sequence[ExplanationNode] = field(default_factory=list)
 
     def render(self, indent: int = 0, translator: Translator | None = None) -> str:
         """Render this explanation node and its children to an indented text string.
@@ -153,28 +153,28 @@ class ExplanationNode:
         if self.is_degraded and "degraded_missing" in params:
             missing_text = params["degraded_missing"]
             deg_default = DEFAULT_EXPLANATION_TEMPLATES["tms.degraded_note"]
-            if translator is not None:
-                params["degraded_note"] = translator(
-                    "tms.degraded_note",
-                    deg_default,
-                    {"missing": missing_text},
-                )
-            else:
-                params["degraded_note"] = deg_default.format(missing=missing_text)
+            params["degraded_note"] = (
+                translator("tms.degraded_note", deg_default, {"missing": missing_text})
+                if translator is not None
+                else deg_default.format(missing=missing_text)
+            )
 
         if self.is_contradiction and "rec_key" in params:
             rec_key = params["rec_key"]
             rec_params = params.get("rec_params", {})
             rec_default = DEFAULT_EXPLANATION_TEMPLATES.get(rec_key, "")
-            if translator is not None and rec_default:
-                params["recommendation"] = translator(rec_key, rec_default, rec_params)
-            elif rec_default:
-                params["recommendation"] = rec_default.format(**rec_params)
+            if rec_default:
+                params["recommendation"] = (
+                    translator(rec_key, rec_default, rec_params)
+                    if translator is not None
+                    else rec_default.format(**rec_params)
+                )
 
-        if translator is not None:
-            local_line = translator(self.key, self.default_template, params)
-        else:
-            local_line = self.default_template.format(**params)
+        local_line = (
+            translator(self.key, self.default_template, params)
+            if translator is not None
+            else self.default_template.format(**params)
+        )
 
         lines = [local_line]
         for child in self.children:
@@ -184,14 +184,11 @@ class ExplanationNode:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert the explanation node into a JSON-serializable dictionary."""
-        clean_params = {}
-        for k, v in self.parameters.items():
-            if k == "prefix":
-                continue
-            if isinstance(v, (str, int, float, bool, list, dict)) or v is None:
-                clean_params[k] = v
-            else:
-                clean_params[k] = str(v)
+        clean_params = {
+            k: v if (isinstance(v, (str, int, float, bool, list, dict)) or v is None) else str(v)
+            for k, v in self.parameters.items()
+            if k != "prefix"
+        }
 
         result: dict[str, Any] = {
             "key": self.key,
@@ -375,13 +372,13 @@ class TruthMaintenanceSystem:
         return result
 
     @property
-    def active_sources(self) -> list[str]:
-        """Return list of entity IDs currently providing active evidence."""
+    def active_sources(self) -> Sequence[str]:
+        """Return sequence of entity IDs currently providing active evidence."""
         return [p.source_id for p in self.premises.values() if p.is_active]
 
     @property
-    def missing_sources(self) -> list[str]:
-        """Return list of entity IDs currently retracted, offline, or stale."""
+    def missing_sources(self) -> Sequence[str]:
+        """Return sequence of entity IDs currently retracted, offline, or stale."""
         return [p.source_id for p in self.premises.values() if not p.is_active]
 
     @property
@@ -399,7 +396,7 @@ class TruthMaintenanceSystem:
 
     def diagnose_contradiction(
         self,
-        active_premises: list[Premise],
+        active_premises: Sequence[Premise],
         translator: Translator | None = None,
     ) -> str:
         """Produce an actionable diagnostic and DDB retraction recommendation for a contradiction."""
@@ -412,16 +409,22 @@ class TruthMaintenanceSystem:
         premises_str = ", ".join(parts)
 
         assumptions = [p for p in active_premises if p.is_assumption]
-        if assumptions:
-            assumptions.sort(key=lambda p: (p.confidence, -p.timestamp))
-            weakest = assumptions[0]
-            rec_key = "tms.recommend_retract"
-            rec_params = {"source_id": weakest.source_id, "confidence": weakest.confidence}
-            rec = f"Recommendation: Retract assumption '{weakest.source_id}' (confidence={weakest.confidence:.2f})."
-        else:
-            rec_key = "tms.no_assumptions"
-            rec_params = {}
-            rec = "No defeasible assumptions present; contradiction is between ground facts."
+        weakest = (
+            min(assumptions, key=lambda p: (p.confidence, -p.timestamp)) if assumptions else None
+        )
+        rec_key, rec_params, rec = (
+            (
+                "tms.recommend_retract",
+                {"source_id": weakest.source_id, "confidence": weakest.confidence},
+                f"Recommendation: Retract assumption '{weakest.source_id}' (confidence={weakest.confidence:.2f}).",
+            )
+            if weakest is not None
+            else (
+                "tms.no_assumptions",
+                {},
+                "No defeasible assumptions present; contradiction is between ground facts.",
+            )
+        )
 
         eff_tr = translator if translator is not None else self.translator
         cell_name = self.display_name or _clean_source_id(self.cell_id)
@@ -501,16 +504,24 @@ class TruthMaintenanceSystem:
             premises_str = ", ".join(parts)
 
             assumptions = [p for p in active if p.is_assumption]
-            if assumptions:
-                assumptions.sort(key=lambda p: (p.confidence, -p.timestamp))
-                weakest = assumptions[0]
-                rec = f"Recommendation: Retract assumption '{weakest.source_id}' (confidence={weakest.confidence:.2f})."
-                rec_key = "tms.recommend_retract"
-                rec_params = {"source_id": weakest.source_id, "confidence": weakest.confidence}
-            else:
-                rec = "No defeasible assumptions present; contradiction is between ground facts."
-                rec_key = "tms.no_assumptions"
-                rec_params = {}
+            weakest = (
+                min(assumptions, key=lambda p: (p.confidence, -p.timestamp))
+                if assumptions
+                else None
+            )
+            rec_key, rec_params, rec = (
+                (
+                    "tms.recommend_retract",
+                    {"source_id": weakest.source_id, "confidence": weakest.confidence},
+                    f"Recommendation: Retract assumption '{weakest.source_id}' (confidence={weakest.confidence:.2f}).",
+                )
+                if weakest is not None
+                else (
+                    "tms.no_assumptions",
+                    {},
+                    "No defeasible assumptions present; contradiction is between ground facts.",
+                )
+            )
 
             return ExplanationNode(
                 key="tms.contradiction",
@@ -753,12 +764,12 @@ class TruthMaintenanceSystem:
 
         for p in self.premises.values():
             safe_id = p.source_id.replace(".", "_")
-            if p.is_active:
-                lines.append(f'  {safe_id}["{p.source_id}<br/>{p.value}"] --> Cell')
-            else:
-                lines.append(
-                    f'  {safe_id}["{p.source_id}<br/>({p.status_reason.upper()})"]:::offline -.-> Cell'
-                )
+            edge = (
+                f'  {safe_id}["{p.source_id}<br/>{p.value}"] --> Cell'
+                if p.is_active
+                else f'  {safe_id}["{p.source_id}<br/>({p.status_reason.upper()})"]:::offline -.-> Cell'
+            )
+            lines.append(edge)
 
         lines.append("  classDef offline stroke:#f00,stroke-dasharray: 5 5,color:#888;")
         lines.append("```")

@@ -1,6 +1,7 @@
 """Unit tests for the Generalized Propagator Network Primitives."""
 
 import math
+from types import MappingProxyType
 
 from lattice_propagator.lattice import (
     BOTTOM,
@@ -9,19 +10,23 @@ from lattice_propagator.lattice import (
     FlatValue,
     GaussianValue,
     IntervalValue,
+    MapLattice,
 )
 from lattice_propagator.primitives import (
     AllDifferentPropagator,
     ArithmeticPropagator,
     BoundedLinearPropagator,
     Cell,
+    ChoiceEngine,
     KalmanEstimatorPropagator,
     LagPropagator,
+    MobileLinkPropagator,
     PropagatorNetwork,
     RatePropagator,
     ThresholdPropagator,
     TrajectoryEnvelopePropagator,
     TrajectorySegment,
+    lift_propagator,
 )
 
 
@@ -622,3 +627,85 @@ def test_trajectory_envelope_squishing_and_custom_functions():
     )
     # At u=0.5 (t=5.0), u^2 = 0.25 -> 25.0
     assert math.isclose(prop_custom.evaluate_at(5.0).center, 25.0, abs_tol=1e-3)
+
+
+def test_abstract_collection_interfaces():
+    """Verify that Propagators, Cells, and Networks accept abstract Sequences and Mappings."""
+    net = PropagatorNetwork("AbstractCollectionsNet")
+
+    # 1. Cell accepts propagators as a tuple Sequence
+    c1 = Cell("c1", propagators=())
+    assert isinstance(c1.propagators, list)
+
+    # 2. lift_propagator accepts tuple Sequence for inputs
+    c2 = net.add_cell("c2", FlatValue(10))
+    c3 = net.add_cell("c3", FlatValue(20))
+    c_out = net.add_cell("c_out")
+    prop = lift_propagator(
+        "add_lifted",
+        lambda a, b: FlatValue(a.val + b.val),
+        (c2, c3),  # tuple Sequence
+        c_out,
+    )
+    assert prop.inputs == [c2, c3]
+    net.add_propagator(prop)
+    net.run()
+    assert c_out.value == FlatValue(30)
+
+    # 3. derive_provenance and derive_premise accept Sequence and Mapping
+    params_proxy = MappingProxyType({"rule": "custom_rule", "scale": 1.5})
+    just, _conf, _is_assump, _support = prop.derive_provenance(
+        antecedents=(c2, c3),
+        parameters=params_proxy,
+    )
+    assert just.rule_name == "FunctionalPropagator"
+    assert just.parameters["rule"] == "custom_rule"
+
+    # 4. AllDifferentPropagator accepts tuple Sequence
+    d1 = net.add_cell("d1", DiscreteDomain.range(1, 4))
+    d2 = net.add_cell("d2", DiscreteDomain.range(1, 4))
+    d3 = net.add_cell("d3", DiscreteDomain.range(1, 4))
+    alldiff = AllDifferentPropagator("alldiff", (d1, d2, d3))  # tuple
+    assert len(alldiff.cells) == 3
+
+    # 5. ChoiceEngine accepts tuple Sequence
+    engine = ChoiceEngine(net, variables=(d1, d2, d3))  # tuple
+    assert engine.variables == [d1, d2, d3]
+
+    # 6. TrajectoryEnvelopePropagator accepts tuple Sequence
+    t_cell = net.add_cell("time", FlatValue(0.0))
+    traj_out = net.add_cell("traj_out")
+    seg = TrajectorySegment(duration=5.0, bounds=50.0)
+    traj_prop = TrajectoryEnvelopePropagator(
+        "traj",
+        t_cell,
+        traj_out,
+        (seg,),  # tuple Sequence
+    )
+    assert len(traj_prop.segments) == 1
+
+    # 7. MobileLinkPropagator accepts Mapping (MappingProxyType) and tuple Sequence
+    chan = net.add_cell("chan", FlatValue("target_a"))
+    payload = net.add_cell("payload", FlatValue("hello"))
+    target_a = net.add_cell("target_a")
+    target_b = net.add_cell("target_b")
+
+    link_map = MobileLinkPropagator(
+        "link_map",
+        chan,
+        payload,
+        targets=MappingProxyType({"target_a": target_a, "target_b": target_b}),
+    )
+    assert "target_a" in link_map.target_map
+
+    link_seq = MobileLinkPropagator(
+        "link_seq",
+        chan,
+        payload,
+        targets=(target_a, target_b),  # tuple Sequence
+    )
+    assert "target_a" in link_seq.target_map
+
+    # 8. MapLattice accepts Mapping (MappingProxyType)
+    ml = MapLattice(MappingProxyType({"key": FlatValue(123)}))
+    assert ml.mapping["key"] == FlatValue(123)

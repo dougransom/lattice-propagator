@@ -12,12 +12,13 @@ import json
 import subprocess
 import sys
 import tomllib
+from collections.abc import Sequence
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
-def _run_cmd(cmd: list[str], cwd: Path = REPO_ROOT) -> int:
+def _run_cmd(cmd: Sequence[str], cwd: Path = REPO_ROOT) -> int:
     """Run a subprocess command within the repo root and stream output."""
     cmd_str = " ".join(cmd)
     print(f"\033[1;34m==>\033[0m \033[1m{cmd_str}\033[0m")
@@ -314,7 +315,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     """Parse CLI arguments and dispatch commands."""
     parser = argparse.ArgumentParser(
         prog="lattice-dev",

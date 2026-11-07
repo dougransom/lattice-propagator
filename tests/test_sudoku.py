@@ -9,6 +9,8 @@ Candidate elimination and hidden-single deduction solve easy/medium puzzles
 purely via monotonic lattice relaxation without any backtracking search.
 """
 
+from collections.abc import Sequence
+
 from lattice_propagator.lattice import Contradiction, DiscreteDomain
 from lattice_propagator.primitives import (
     AllDifferentPropagator,
@@ -17,7 +19,9 @@ from lattice_propagator.primitives import (
 )
 
 
-def _build_sudoku_network(name: str = "Sudoku") -> tuple[PropagatorNetwork, list[list[Cell]]]:
+def _build_sudoku_network(
+    name: str = "Sudoku",
+) -> tuple[PropagatorNetwork, Sequence[Sequence[Cell]]]:
     """Helper to scaffold an 81-cell Sudoku PropagatorNetwork with 27 AllDifferent units."""
     net = PropagatorNetwork(name)
     grid = [[net.add_cell(f"R{r + 1}C{c + 1}") for c in range(9)] for r in range(9)]
