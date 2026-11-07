@@ -178,7 +178,6 @@ hourly_inputs = [
 
 RIVIAN_TARGET_SOC = 75.0  # Charge Rivian first until 75.0% target
 TESLA_TARGET_SOC = 30.0  # Then charge Tesla until 30.0% target
-TESLA_TARGET_SOC = 30.0  # Then charge Tesla until 30.0% target
 
 for hour, sol_val, base_val in hourly_inputs:
     # Clear intermediate surplus cell for the new discrete time step
@@ -320,4 +319,98 @@ If a downstream breaker limit or vehicle battery fault triggers a contradiction 
 1. **Monotonicity with Scoped Retraction:** Information fusion within each active cell remains monotonic ($\sqcup$). When topological links move, non-monotonic belief revision is localized strictly to the source premise via the cell's `TruthMaintenanceSystem`.
 2. **First-Class Channels:** Communication endpoints are ordinary lattice values (`FlatValue`, `DiscreteDomain`, `SetLattice`, `OrderedInterval`, or `BeliefMassValue`), enabling reasoning about routing paths using the same algebra as sensor data.
 3. **No Dangling Wires:** Vacating a target automatically removes the asserted constraint, eliminating memory leaks and stale command states.
+
+---
+
+## 7. Deep Dive: Spatial Information Accumulation vs. Temporal Simulation
+
+A natural question arises when viewing the hourly loop in [Section 4](#4-executable-python-implementation):
+
+> *"In this simulation, aren't we just calculating values directly rather than accumulating partial information in cells?"*
+
+At first glance, the discrete time loop looks like a conventional imperative script: we feed inputs for Hour $H$, run the network, and read the outputs. However, under the hood, cells are **not** passive variables or function return registers. They are **join-semilattice accumulators** operating across two fundamentally distinct physical dimensions:
+
+1. **Spatial Constraint Accumulation (Within a Single Time Step)**
+2. **Temporal State Accumulation vs. Instantaneous Flux (Across Time Steps)**
+
+---
+
+### Spatial Accumulation (Within a Single Time Step)
+
+Within any given hour, no single component "calculates" the vehicle's charging power directly. Instead, multiple independent physical sources and regulatory envelopes **accumulate concurrently** into the target vehicle cell via lattice join ($\sqcup$ in information refinement order, corresponding to interval intersection $\sqcap$):
+
+```mermaid
+flowchart LR
+    HW["Hardware Standby Limit<br/>[0.0, 11.5] kW<br/><i>source: hardware_envelope</i>"] -->|⊔| RivianCell["Rivian Power Cell<br/><b>Accumulated: [3.3, 3.8] kW</b>"]
+    Circuit["Garage Circuit Feeder<br/>[0.0, 9.6] kW<br/><i>source: circuit_safety</i>"] -->|⊔| RivianCell
+    Solar["π-Calculus Mobile Link<br/>[3.3, 4.0] kW<br/><i>source: ev_dispatcher@rivian</i>"] -->|⊔| RivianCell
+    BMS["BMS Cold-Pack Pilot Limit<br/>[0.0, 3.8] kW<br/><i>source: bms_thermal</i>"] -->|⊔| RivianCell
+
+    classDef cell fill:#2d3748,stroke:#cbd5e0,stroke-width:2px,color:#fff;
+    classDef src fill:#1a365d,stroke:#63b3ed,stroke-width:2px,color:#fff;
+    class RivianCell cell;
+    class HW,Circuit,Solar,BMS src;
+```
+
+Mathematically, the cell computes:
+
+$$[0.0, 11.5] \sqcap [0.0, 9.6] \sqcap [3.3, 4.0] \sqcap [0.0, 3.8] = [3.3, 3.8]\,\text{kW}$$
+
+- **Decentralized & Multi-Directional:** The inverter did not need to know about the cold-pack BMS limit, nor did the solar splitter need to know about the circuit breaker. Each subsystem asserted its partial knowledge into the shared cell.
+- **Monotonic Refinement:** As each new constraint arrives, information strictly refines ($x \sqsubseteq x \sqcup y$). The cell's bounds tighten monotonically until fixed-point quiescence is reached.
+
+---
+
+### Instantaneous Flux vs. State Accumulation (Across Time Steps)
+
+Why does the simulation loop call `surplus.set_value(BOTTOM, overwrite=True)` at the beginning of each hour?
+
+Physical variables fall into two distinct ontological categories:
+
+| Dimension | Physical Nature | Units | Lattice Behavior Across Time | Examples |
+| :--- | :--- | :---: | :--- | :--- |
+| **Instantaneous Flux** | Rate of flow at time $t$ | $\text{kW}$, $\text{A}$, $\text{m/s}$ | **Non-accumulating across time.** Previous intervals are physically obsolete. Must be reset or updated for each discrete step. | Solar generation ($P_{\text{solar}}$), home baseload ($P_{\text{base}}$), charging power ($P_{\text{ev}}$) |
+| **Integrated State** | Accumulated quantity over time ($Q = \int \Phi\,dt$) | $\text{kWh}$, $\text{Ah}$, $\text{m}$ | **Accumulating across time.** Monotonically aggregates or tracks state integrals. | Battery stored energy ($E$), State of Charge ($\text{SOC}$), odometer |
+
+If instantaneous power flux were monotonically intersected across hours without resetting, the lattice would attempt to intersect disjoint intervals:
+
+$$[3.3, 4.0]\,\text{kW}\ (11:00) \sqcap [5.5, 6.7]\,\text{kW}\ (12:00) = \top\quad (\text{Contradiction})$$
+
+An empty interval contradiction would be declared because no physical constant power can simultaneously be both $3.5\,\text{kW}$ and $6.0\,\text{kW}$. 
+
+Conversely, stored battery energy ($E$) **is** a true state accumulator. Across the 6-hour simulation, the Rivian energy cell integrated energy monotonically:
+
+$$90.45\,\text{kWh}\ (67.0\%) \longrightarrow 94.10\,\text{kWh}\ (69.7\%) \longrightarrow 100.20\,\text{kWh}\ (74.2\%) \longrightarrow 106.75\,\text{kWh}\ (79.1\%)$$
+
+---
+
+### Truth Maintenance & Autonomous Relaxation
+
+The combination of Milner's $\pi$-calculus link mobility with the Truth Maintenance System (TMS) provides an elegant solution to dynamic reconfiguration:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Sim as Simulation Step
+    participant Disp as MobileLinkPropagator
+    participant Riv as rivian_power (Cell)
+    participant Tes as tesla_power (Cell)
+
+    Note over Sim,Tes: Hour 13:00 (Rivian reaches 75% target)
+    Sim->>Disp: active_vehicle = "tesla"
+    Disp->>Riv: retract_source("ev_dispatcher@rivian")
+    Note over Riv: TMS recalculates active premises:<br/>{hardware_envelope: [0.0, 11.5]}<br/>Rivian cleanly relaxes back to Standby!
+    Disp->>Tes: assert_source("ev_dispatcher@tesla", [4.6, 5.3] kW)
+    Note over Tes: TMS fuses:<br/>[0.0, 7.6] ⊓ [4.6, 5.3] = [4.6, 5.3] kW
+```
+
+In classical imperative control:
+- To switch charging from Rivian to Tesla, a script must explicitly invoke `stop_charging(rivian)` or set `rivian_power = 0.0`.
+- If that cleanup step fails, crashes, or is omitted, the Rivian remains stuck drawing power or locked in a stale state.
+
+In `lattice-propagator`:
+- The solar connection is an asserted **premise** (`ev_dispatcher@rivian`).
+- When the active vehicle changes, `MobileLinkPropagator` simply retracts that premise.
+- The Rivian cell's internal TMS automatically re-evaluates all remaining active premises (its `hardware_envelope`), cleanly relaxing the cell back to its standby bounds $[0.0, 11.5]\,\text{kW}$ with zero manual cleanup logic!
+
 
