@@ -6,6 +6,19 @@ We welcome pull requests, issue reports, documentation improvements, and feedbac
 
 ---
 
+## Agent Customizations & AI-Assisted Development
+
+This project has been primarily developed using **Antigravity**, including the authoring of all implementation code, test suites, documentation, and the programmatic generation of diagrams and images.
+
+To support seamless collaboration with AI coding assistants, repository-specific agent customizations are maintained under `.agents/`:
+
+- **`.agents/rules/`** (and project root `AGENTS.md`): Architectural maps, invariant guardrails (strict zero runtime dependencies, join-semilattice algebraic monotonicity, Google-style docstrings, rich mathematical typography), and mandatory verification gates.
+- **`.agents/skills/`** (e.g., `sync-metadata`): Reusable agent workflows for automated repository maintenance, such as metadata and citation synchronization.
+
+Whether developing manually or pair programming with AI assistants, contributors are encouraged to leverage these guidelines.
+
+---
+
 ## Code Standards
 
 1. **Dependency Guideline**: Strong preference for zero runtime dependencies. Any addition of dependencies (runtime or dev) requires explicit human approval.

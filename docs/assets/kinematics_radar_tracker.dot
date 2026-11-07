@@ -1,0 +1,14 @@
+digraph "KinematicRadarTracking" {
+  rankdir="LR";
+  node [fontname="Helvetica", fontsize=10];
+  edge [fontname="Helvetica", fontsize=9];
+
+  C_dist [label="dist\n⊥", shape=box, style="filled,dashed", fillcolor="#f8f9fa", color="#adb5bd"];
+  C_eta_collision [label="eta_collision\n[3.40, 4.80]s", shape=box, style="filled,rounded", fillcolor="#ebf8ff", color="#3182ce"];
+  C_velocity [label="velocity\n-20.00 ± 2.77m/s", shape=box, style="filled,rounded", fillcolor="#f0fff4", color="#38a169"];
+  P_RadarTracker [label="RadarTracker", shape=component, style=filled, fillcolor="#f7fafc", color="#2d3748"];
+
+  C_dist -> P_RadarTracker;
+  P_RadarTracker -> C_velocity;
+  P_RadarTracker -> C_eta_collision;
+}

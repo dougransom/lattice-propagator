@@ -1,0 +1,14 @@
+digraph "KalmanTracking" {
+  rankdir="LR";
+  node [fontname="Helvetica", fontsize=10];
+  edge [fontname="Helvetica", fontsize=9];
+
+  C_Observation [label="Observation\n22.00 ± 1.39", shape=box, style="filled,rounded", fillcolor="#f0fff4", color="#38a169"];
+  C_Rate [label="Rate\n0.18 ± 0.93", shape=box, style="filled,rounded", fillcolor="#f0fff4", color="#38a169"];
+  C_State [label="State\n22.38 ± 0.86", shape=box, style="filled,rounded", fillcolor="#f0fff4", color="#38a169"];
+  P_ThermalKalman [label="ThermalKalman", shape=component, style=filled, fillcolor="#f7fafc", color="#2d3748"];
+
+  C_Observation -> P_ThermalKalman;
+  P_ThermalKalman -> C_State;
+  P_ThermalKalman -> C_Rate;
+}

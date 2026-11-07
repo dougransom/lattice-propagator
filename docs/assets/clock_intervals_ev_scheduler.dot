@@ -1,0 +1,15 @@
+digraph "OvernightEVScheduler" {
+  rankdir="LR";
+  node [fontname="Helvetica", fontsize=10];
+  edge [fontname="Helvetica", fontsize=9];
+
+  C_charging_corridor [label="Consolidated Charging Corridor\n[0.5, 6.5] (mod 24.0)", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
+  C_delivered_power [label="delivered_power\n[0.00, 0.00]kW", shape=box, style="filled,rounded", fillcolor="#ebf8ff", color="#3182ce"];
+  C_enable_switch [label="enable_switch\nFalse", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
+  C_nominal_power [label="nominal_power\n[7.00, 7.40]kW", shape=box, style="filled,rounded", fillcolor="#ebf8ff", color="#3182ce"];
+  P_EV_Contactor [label="EV_Contactor", shape=component, style=filled, fillcolor="#f7fafc", color="#2d3748"];
+
+  C_enable_switch -> P_EV_Contactor;
+  C_nominal_power -> P_EV_Contactor;
+  P_EV_Contactor -> C_delivered_power;
+}

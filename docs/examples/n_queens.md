@@ -85,6 +85,14 @@ def solve_n_queens(n: int = 8) -> list[int]:
     solved = engine.solve()
     assert solved, "No solution found!"
 
+    # Export and persist network diagrams
+    from pathlib import Path
+
+    assets_dir = Path("docs/assets")
+    if assets_dir.is_dir():
+        (assets_dir / "n_queens_network.mmd").write_text(net.generate_mermaid(), encoding="utf-8")
+        (assets_dir / "n_queens_network.dot").write_text(net.generate_dot(), encoding="utf-8")
+
     return [queens[i].value.value for i in range(n)]
 
 
@@ -100,3 +108,70 @@ for r in range(7, -1, -1):
     print(row_str)
 print("  a b c d e f g h")
 ```
+
+---
+
+## 3. Constraint Network Visualization (4-Queens Topology)
+
+The $N$-Queens constraint network models files as discrete domain cells interconnected by a global row uniqueness constraint (`AllDifferentPropagator`) and pairwise diagonal non-attack propagators:
+
+```mermaid
+graph LR
+  classDef bottom fill:#f8f9fa,stroke:#adb5bd,stroke-dasharray: 4 4,color:#6c757d;
+  classDef contradiction fill:#fff5f5,stroke:#e53e3e,stroke-width:2px,color:#9b2c2c;
+  classDef interval fill:#ebf8ff,stroke:#3182ce,stroke-width:1.5px;
+  classDef gaussian fill:#f0fff4,stroke:#38a169,stroke-width:1.5px;
+  classDef discrete fill:#faf5ff,stroke:#805ad5,stroke-width:1.5px;
+  classDef cell fill:#edf2f7,stroke:#4a5568,stroke-width:1.5px;
+  classDef value fill:#edf2f7,stroke:#4a5568,stroke-width:1.5px;
+  classDef set fill:#faf5ff,stroke:#805ad5,stroke-width:1.5px;
+  classDef belief fill:#f0fff4,stroke:#38a169,stroke-width:1.5px;
+  classDef propagator fill:#f7fafc,stroke:#2d3748,stroke-width:1.5px;
+  C_Q_0["Q_0<br/>{1}"]:::discrete
+  C_Q_1["Q_1<br/>{3}"]:::discrete
+  C_Q_2["Q_2<br/>{0}"]:::discrete
+  C_Q_3["Q_3<br/>{2}"]:::discrete
+  P_AllDiffRows["AllDiffRows"]:::propagator
+  P_Diag_0_1["Diag_0_1"]:::propagator
+  P_Diag_0_2["Diag_0_2"]:::propagator
+  P_Diag_0_3["Diag_0_3"]:::propagator
+  P_Diag_1_2["Diag_1_2"]:::propagator
+  P_Diag_1_3["Diag_1_3"]:::propagator
+  P_Diag_2_3["Diag_2_3"]:::propagator
+  C_Q_0 --> P_AllDiffRows
+  C_Q_1 --> P_AllDiffRows
+  C_Q_2 --> P_AllDiffRows
+  C_Q_3 --> P_AllDiffRows
+  P_AllDiffRows --> C_Q_0
+  P_AllDiffRows --> C_Q_1
+  P_AllDiffRows --> C_Q_2
+  P_AllDiffRows --> C_Q_3
+  C_Q_0 --> P_Diag_0_1
+  C_Q_1 --> P_Diag_0_1
+  P_Diag_0_1 --> C_Q_0
+  P_Diag_0_1 --> C_Q_1
+  C_Q_0 --> P_Diag_0_2
+  C_Q_2 --> P_Diag_0_2
+  P_Diag_0_2 --> C_Q_0
+  P_Diag_0_2 --> C_Q_2
+  C_Q_0 --> P_Diag_0_3
+  C_Q_3 --> P_Diag_0_3
+  P_Diag_0_3 --> C_Q_0
+  P_Diag_0_3 --> C_Q_3
+  C_Q_1 --> P_Diag_1_2
+  C_Q_2 --> P_Diag_1_2
+  P_Diag_1_2 --> C_Q_1
+  P_Diag_1_2 --> C_Q_2
+  C_Q_1 --> P_Diag_1_3
+  C_Q_3 --> P_Diag_1_3
+  P_Diag_1_3 --> C_Q_1
+  P_Diag_1_3 --> C_Q_3
+  C_Q_2 --> P_Diag_2_3
+  C_Q_3 --> P_Diag_2_3
+  P_Diag_2_3 --> C_Q_2
+  P_Diag_2_3 --> C_Q_3
+```
+
+### Downloadable 8-Queens Network Assets
+- [Mermaid Diagram Source (`n_queens_network.mmd`)](../assets/n_queens_network.mmd)
+- [Graphviz DOT Specification (`n_queens_network.dot`)](../assets/n_queens_network.dot)

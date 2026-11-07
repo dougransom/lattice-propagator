@@ -1,0 +1,12 @@
+digraph "LightingTrajectory" {
+  rankdir="LR";
+  node [fontname="Helvetica", fontsize=10];
+  edge [fontname="Helvetica", fontsize=9];
+
+  C_elapsed_time [label="elapsed_time\n30.0", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
+  C_lighting_output [label="lighting_output\n[100.00, 100.00]", shape=box, style="filled,rounded", fillcolor="#ebf8ff", color="#3182ce"];
+  P_sunrise_curve [label="sunrise_curve", shape=component, style=filled, fillcolor="#f7fafc", color="#2d3748"];
+
+  C_elapsed_time -> P_sunrise_curve;
+  P_sunrise_curve -> C_lighting_output;
+}

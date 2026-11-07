@@ -1,0 +1,607 @@
+```mermaid
+graph LR
+  classDef bottom fill:#f8f9fa,stroke:#adb5bd,stroke-dasharray: 4 4,color:#6c757d;
+  classDef contradiction fill:#fff5f5,stroke:#e53e3e,stroke-width:2px,color:#9b2c2c;
+  classDef interval fill:#ebf8ff,stroke:#3182ce,stroke-width:1.5px;
+  classDef gaussian fill:#f0fff4,stroke:#38a169,stroke-width:1.5px;
+  classDef discrete fill:#faf5ff,stroke:#805ad5,stroke-width:1.5px;
+  classDef cell fill:#edf2f7,stroke:#4a5568,stroke-width:1.5px;
+  classDef value fill:#edf2f7,stroke:#4a5568,stroke-width:1.5px;
+  classDef set fill:#faf5ff,stroke:#805ad5,stroke-width:1.5px;
+  classDef belief fill:#f0fff4,stroke:#38a169,stroke-width:1.5px;
+  classDef propagator fill:#f7fafc,stroke:#2d3748,stroke-width:1.5px;
+  C_R1C1["R1C1<br/>{1, 2, 3, 4, 5, 6, 7, 8, 9}"]:::discrete
+  C_R1C2["R1C2<br/>{8}"]:::discrete
+  C_R1C3["R1C3<br/>{3}"]:::discrete
+  C_R1C4["R1C4<br/>{4}"]:::discrete
+  C_R1C5["R1C5<br/>{2}"]:::discrete
+  C_R1C6["R1C6<br/>{1}"]:::discrete
+  C_R1C7["R1C7<br/>{6}"]:::discrete
+  C_R1C8["R1C8<br/>{9}"]:::discrete
+  C_R1C9["R1C9<br/>{7}"]:::discrete
+  C_R2C1["R2C1<br/>{9}"]:::discrete
+  C_R2C2["R2C2<br/>{6}"]:::discrete
+  C_R2C3["R2C3<br/>{4}"]:::discrete
+  C_R2C4["R2C4<br/>{3}"]:::discrete
+  C_R2C5["R2C5<br/>{7}"]:::discrete
+  C_R2C6["R2C6<br/>{5}"]:::discrete
+  C_R2C7["R2C7<br/>{8}"]:::discrete
+  C_R2C8["R2C8<br/>{2}"]:::discrete
+  C_R2C9["R2C9<br/>{1}"]:::discrete
+  C_R3C1["R3C1<br/>{2}"]:::discrete
+  C_R3C2["R3C2<br/>{7}"]:::discrete
+  C_R3C3["R3C3<br/>{1}"]:::discrete
+  C_R3C4["R3C4<br/>{8}"]:::discrete
+  C_R3C5["R3C5<br/>{9}"]:::discrete
+  C_R3C6["R3C6<br/>{6}"]:::discrete
+  C_R3C7["R3C7<br/>{4}"]:::discrete
+  C_R3C8["R3C8<br/>{5}"]:::discrete
+  C_R3C9["R3C9<br/>{3}"]:::discrete
+  C_R4C1["R4C1<br/>{4}"]:::discrete
+  C_R4C2["R4C2<br/>{5}"]:::discrete
+  C_R4C3["R4C3<br/>{8}"]:::discrete
+  C_R4C4["R4C4<br/>{1}"]:::discrete
+  C_R4C5["R4C5<br/>{3}"]:::discrete
+  C_R4C6["R4C6<br/>{2}"]:::discrete
+  C_R4C7["R4C7<br/>{9}"]:::discrete
+  C_R4C8["R4C8<br/>{7}"]:::discrete
+  C_R4C9["R4C9<br/>{6}"]:::discrete
+  C_R5C1["R5C1<br/>{7}"]:::discrete
+  C_R5C2["R5C2<br/>{2}"]:::discrete
+  C_R5C3["R5C3<br/>{9}"]:::discrete
+  C_R5C4["R5C4<br/>{5}"]:::discrete
+  C_R5C5["R5C5<br/>{6}"]:::discrete
+  C_R5C6["R5C6<br/>{4}"]:::discrete
+  C_R5C7["R5C7<br/>{1}"]:::discrete
+  C_R5C8["R5C8<br/>{3}"]:::discrete
+  C_R5C9["R5C9<br/>{8}"]:::discrete
+  C_R6C1["R6C1<br/>{1}"]:::discrete
+  C_R6C2["R6C2<br/>{3}"]:::discrete
+  C_R6C3["R6C3<br/>{6}"]:::discrete
+  C_R6C4["R6C4<br/>{7}"]:::discrete
+  C_R6C5["R6C5<br/>⊤ (Duplicate value 9 in Col_5 between R3C5 and R6C5)"]:::contradiction
+  C_R6C6["R6C6<br/>{8}"]:::discrete
+  C_R6C7["R6C7<br/>{2}"]:::discrete
+  C_R6C8["R6C8<br/>{4}"]:::discrete
+  C_R6C9["R6C9<br/>{5}"]:::discrete
+  C_R7C1["R7C1<br/>{3}"]:::discrete
+  C_R7C2["R7C2<br/>⊤ (Duplicate value 7 in Col_2 between R3C2 and R7C2)"]:::contradiction
+  C_R7C3["R7C3<br/>{2}"]:::discrete
+  C_R7C4["R7C4<br/>{6}"]:::discrete
+  C_R7C5["R7C5<br/>{8}"]:::discrete
+  C_R7C6["R7C6<br/>{9}"]:::discrete
+  C_R7C7["R7C7<br/>{5}"]:::discrete
+  C_R7C8["R7C8<br/>{1}"]:::discrete
+  C_R7C9["R7C9<br/>{4}"]:::discrete
+  C_R8C1["R8C1<br/>{8}"]:::discrete
+  C_R8C2["R8C2<br/>{1}"]:::discrete
+  C_R8C3["R8C3<br/>⊤ (Duplicate value 4 in Col_3 between R2C3 and R8C3)"]:::contradiction
+  C_R8C4["R8C4<br/>{2}"]:::discrete
+  C_R8C5["R8C5<br/>{5}"]:::discrete
+  C_R8C6["R8C6<br/>{3}"]:::discrete
+  C_R8C7["R8C7<br/>{7}"]:::discrete
+  C_R8C8["R8C8<br/>{6}"]:::discrete
+  C_R8C9["R8C9<br/>{9}"]:::discrete
+  C_R9C1["R9C1<br/>{6}"]:::discrete
+  C_R9C2["R9C2<br/>{9}"]:::discrete
+  C_R9C3["R9C3<br/>{5}"]:::discrete
+  C_R9C4["R9C4<br/>⊤ (Duplicate value 4 in Col_4 between R1C4 and R9C4)"]:::contradiction
+  C_R9C5["R9C5<br/>{1}"]:::discrete
+  C_R9C6["R9C6<br/>{7}"]:::discrete
+  C_R9C7["R9C7<br/>{3}"]:::discrete
+  C_R9C8["R9C8<br/>{8}"]:::discrete
+  C_R9C9["R9C9<br/>{2}"]:::discrete
+  P_Box_1_1["Box_1_1"]:::propagator
+  P_Box_1_2["Box_1_2"]:::propagator
+  P_Box_1_3["Box_1_3"]:::propagator
+  P_Box_2_1["Box_2_1"]:::propagator
+  P_Box_2_2["Box_2_2"]:::propagator
+  P_Box_2_3["Box_2_3"]:::propagator
+  P_Box_3_1["Box_3_1"]:::propagator
+  P_Box_3_2["Box_3_2"]:::propagator
+  P_Box_3_3["Box_3_3"]:::propagator
+  P_Col_1["Col_1"]:::propagator
+  P_Col_2["Col_2"]:::propagator
+  P_Col_3["Col_3"]:::propagator
+  P_Col_4["Col_4"]:::propagator
+  P_Col_5["Col_5"]:::propagator
+  P_Col_6["Col_6"]:::propagator
+  P_Col_7["Col_7"]:::propagator
+  P_Col_8["Col_8"]:::propagator
+  P_Col_9["Col_9"]:::propagator
+  P_Row_1["Row_1"]:::propagator
+  P_Row_2["Row_2"]:::propagator
+  P_Row_3["Row_3"]:::propagator
+  P_Row_4["Row_4"]:::propagator
+  P_Row_5["Row_5"]:::propagator
+  P_Row_6["Row_6"]:::propagator
+  P_Row_7["Row_7"]:::propagator
+  P_Row_8["Row_8"]:::propagator
+  P_Row_9["Row_9"]:::propagator
+  C_R1C1 --> P_Row_1
+  C_R1C2 --> P_Row_1
+  C_R1C3 --> P_Row_1
+  C_R1C4 --> P_Row_1
+  C_R1C5 --> P_Row_1
+  C_R1C6 --> P_Row_1
+  C_R1C7 --> P_Row_1
+  C_R1C8 --> P_Row_1
+  C_R1C9 --> P_Row_1
+  P_Row_1 --> C_R1C1
+  P_Row_1 --> C_R1C2
+  P_Row_1 --> C_R1C3
+  P_Row_1 --> C_R1C4
+  P_Row_1 --> C_R1C5
+  P_Row_1 --> C_R1C6
+  P_Row_1 --> C_R1C7
+  P_Row_1 --> C_R1C8
+  P_Row_1 --> C_R1C9
+  C_R2C1 --> P_Row_2
+  C_R2C2 --> P_Row_2
+  C_R2C3 --> P_Row_2
+  C_R2C4 --> P_Row_2
+  C_R2C5 --> P_Row_2
+  C_R2C6 --> P_Row_2
+  C_R2C7 --> P_Row_2
+  C_R2C8 --> P_Row_2
+  C_R2C9 --> P_Row_2
+  P_Row_2 --> C_R2C1
+  P_Row_2 --> C_R2C2
+  P_Row_2 --> C_R2C3
+  P_Row_2 --> C_R2C4
+  P_Row_2 --> C_R2C5
+  P_Row_2 --> C_R2C6
+  P_Row_2 --> C_R2C7
+  P_Row_2 --> C_R2C8
+  P_Row_2 --> C_R2C9
+  C_R3C1 --> P_Row_3
+  C_R3C2 --> P_Row_3
+  C_R3C3 --> P_Row_3
+  C_R3C4 --> P_Row_3
+  C_R3C5 --> P_Row_3
+  C_R3C6 --> P_Row_3
+  C_R3C7 --> P_Row_3
+  C_R3C8 --> P_Row_3
+  C_R3C9 --> P_Row_3
+  P_Row_3 --> C_R3C1
+  P_Row_3 --> C_R3C2
+  P_Row_3 --> C_R3C3
+  P_Row_3 --> C_R3C4
+  P_Row_3 --> C_R3C5
+  P_Row_3 --> C_R3C6
+  P_Row_3 --> C_R3C7
+  P_Row_3 --> C_R3C8
+  P_Row_3 --> C_R3C9
+  C_R4C1 --> P_Row_4
+  C_R4C2 --> P_Row_4
+  C_R4C3 --> P_Row_4
+  C_R4C4 --> P_Row_4
+  C_R4C5 --> P_Row_4
+  C_R4C6 --> P_Row_4
+  C_R4C7 --> P_Row_4
+  C_R4C8 --> P_Row_4
+  C_R4C9 --> P_Row_4
+  P_Row_4 --> C_R4C1
+  P_Row_4 --> C_R4C2
+  P_Row_4 --> C_R4C3
+  P_Row_4 --> C_R4C4
+  P_Row_4 --> C_R4C5
+  P_Row_4 --> C_R4C6
+  P_Row_4 --> C_R4C7
+  P_Row_4 --> C_R4C8
+  P_Row_4 --> C_R4C9
+  C_R5C1 --> P_Row_5
+  C_R5C2 --> P_Row_5
+  C_R5C3 --> P_Row_5
+  C_R5C4 --> P_Row_5
+  C_R5C5 --> P_Row_5
+  C_R5C6 --> P_Row_5
+  C_R5C7 --> P_Row_5
+  C_R5C8 --> P_Row_5
+  C_R5C9 --> P_Row_5
+  P_Row_5 --> C_R5C1
+  P_Row_5 --> C_R5C2
+  P_Row_5 --> C_R5C3
+  P_Row_5 --> C_R5C4
+  P_Row_5 --> C_R5C5
+  P_Row_5 --> C_R5C6
+  P_Row_5 --> C_R5C7
+  P_Row_5 --> C_R5C8
+  P_Row_5 --> C_R5C9
+  C_R6C1 --> P_Row_6
+  C_R6C2 --> P_Row_6
+  C_R6C3 --> P_Row_6
+  C_R6C4 --> P_Row_6
+  C_R6C5 --> P_Row_6
+  C_R6C6 --> P_Row_6
+  C_R6C7 --> P_Row_6
+  C_R6C8 --> P_Row_6
+  C_R6C9 --> P_Row_6
+  P_Row_6 --> C_R6C1
+  P_Row_6 --> C_R6C2
+  P_Row_6 --> C_R6C3
+  P_Row_6 --> C_R6C4
+  P_Row_6 --> C_R6C5
+  P_Row_6 --> C_R6C6
+  P_Row_6 --> C_R6C7
+  P_Row_6 --> C_R6C8
+  P_Row_6 --> C_R6C9
+  C_R7C1 --> P_Row_7
+  C_R7C2 --> P_Row_7
+  C_R7C3 --> P_Row_7
+  C_R7C4 --> P_Row_7
+  C_R7C5 --> P_Row_7
+  C_R7C6 --> P_Row_7
+  C_R7C7 --> P_Row_7
+  C_R7C8 --> P_Row_7
+  C_R7C9 --> P_Row_7
+  P_Row_7 --> C_R7C1
+  P_Row_7 --> C_R7C2
+  P_Row_7 --> C_R7C3
+  P_Row_7 --> C_R7C4
+  P_Row_7 --> C_R7C5
+  P_Row_7 --> C_R7C6
+  P_Row_7 --> C_R7C7
+  P_Row_7 --> C_R7C8
+  P_Row_7 --> C_R7C9
+  C_R8C1 --> P_Row_8
+  C_R8C2 --> P_Row_8
+  C_R8C3 --> P_Row_8
+  C_R8C4 --> P_Row_8
+  C_R8C5 --> P_Row_8
+  C_R8C6 --> P_Row_8
+  C_R8C7 --> P_Row_8
+  C_R8C8 --> P_Row_8
+  C_R8C9 --> P_Row_8
+  P_Row_8 --> C_R8C1
+  P_Row_8 --> C_R8C2
+  P_Row_8 --> C_R8C3
+  P_Row_8 --> C_R8C4
+  P_Row_8 --> C_R8C5
+  P_Row_8 --> C_R8C6
+  P_Row_8 --> C_R8C7
+  P_Row_8 --> C_R8C8
+  P_Row_8 --> C_R8C9
+  C_R9C1 --> P_Row_9
+  C_R9C2 --> P_Row_9
+  C_R9C3 --> P_Row_9
+  C_R9C4 --> P_Row_9
+  C_R9C5 --> P_Row_9
+  C_R9C6 --> P_Row_9
+  C_R9C7 --> P_Row_9
+  C_R9C8 --> P_Row_9
+  C_R9C9 --> P_Row_9
+  P_Row_9 --> C_R9C1
+  P_Row_9 --> C_R9C2
+  P_Row_9 --> C_R9C3
+  P_Row_9 --> C_R9C4
+  P_Row_9 --> C_R9C5
+  P_Row_9 --> C_R9C6
+  P_Row_9 --> C_R9C7
+  P_Row_9 --> C_R9C8
+  P_Row_9 --> C_R9C9
+  C_R1C1 --> P_Col_1
+  C_R2C1 --> P_Col_1
+  C_R3C1 --> P_Col_1
+  C_R4C1 --> P_Col_1
+  C_R5C1 --> P_Col_1
+  C_R6C1 --> P_Col_1
+  C_R7C1 --> P_Col_1
+  C_R8C1 --> P_Col_1
+  C_R9C1 --> P_Col_1
+  P_Col_1 --> C_R1C1
+  P_Col_1 --> C_R2C1
+  P_Col_1 --> C_R3C1
+  P_Col_1 --> C_R4C1
+  P_Col_1 --> C_R5C1
+  P_Col_1 --> C_R6C1
+  P_Col_1 --> C_R7C1
+  P_Col_1 --> C_R8C1
+  P_Col_1 --> C_R9C1
+  C_R1C2 --> P_Col_2
+  C_R2C2 --> P_Col_2
+  C_R3C2 --> P_Col_2
+  C_R4C2 --> P_Col_2
+  C_R5C2 --> P_Col_2
+  C_R6C2 --> P_Col_2
+  C_R7C2 --> P_Col_2
+  C_R8C2 --> P_Col_2
+  C_R9C2 --> P_Col_2
+  P_Col_2 --> C_R1C2
+  P_Col_2 --> C_R2C2
+  P_Col_2 --> C_R3C2
+  P_Col_2 --> C_R4C2
+  P_Col_2 --> C_R5C2
+  P_Col_2 --> C_R6C2
+  P_Col_2 --> C_R7C2
+  P_Col_2 --> C_R8C2
+  P_Col_2 --> C_R9C2
+  C_R1C3 --> P_Col_3
+  C_R2C3 --> P_Col_3
+  C_R3C3 --> P_Col_3
+  C_R4C3 --> P_Col_3
+  C_R5C3 --> P_Col_3
+  C_R6C3 --> P_Col_3
+  C_R7C3 --> P_Col_3
+  C_R8C3 --> P_Col_3
+  C_R9C3 --> P_Col_3
+  P_Col_3 --> C_R1C3
+  P_Col_3 --> C_R2C3
+  P_Col_3 --> C_R3C3
+  P_Col_3 --> C_R4C3
+  P_Col_3 --> C_R5C3
+  P_Col_3 --> C_R6C3
+  P_Col_3 --> C_R7C3
+  P_Col_3 --> C_R8C3
+  P_Col_3 --> C_R9C3
+  C_R1C4 --> P_Col_4
+  C_R2C4 --> P_Col_4
+  C_R3C4 --> P_Col_4
+  C_R4C4 --> P_Col_4
+  C_R5C4 --> P_Col_4
+  C_R6C4 --> P_Col_4
+  C_R7C4 --> P_Col_4
+  C_R8C4 --> P_Col_4
+  C_R9C4 --> P_Col_4
+  P_Col_4 --> C_R1C4
+  P_Col_4 --> C_R2C4
+  P_Col_4 --> C_R3C4
+  P_Col_4 --> C_R4C4
+  P_Col_4 --> C_R5C4
+  P_Col_4 --> C_R6C4
+  P_Col_4 --> C_R7C4
+  P_Col_4 --> C_R8C4
+  P_Col_4 --> C_R9C4
+  C_R1C5 --> P_Col_5
+  C_R2C5 --> P_Col_5
+  C_R3C5 --> P_Col_5
+  C_R4C5 --> P_Col_5
+  C_R5C5 --> P_Col_5
+  C_R6C5 --> P_Col_5
+  C_R7C5 --> P_Col_5
+  C_R8C5 --> P_Col_5
+  C_R9C5 --> P_Col_5
+  P_Col_5 --> C_R1C5
+  P_Col_5 --> C_R2C5
+  P_Col_5 --> C_R3C5
+  P_Col_5 --> C_R4C5
+  P_Col_5 --> C_R5C5
+  P_Col_5 --> C_R6C5
+  P_Col_5 --> C_R7C5
+  P_Col_5 --> C_R8C5
+  P_Col_5 --> C_R9C5
+  C_R1C6 --> P_Col_6
+  C_R2C6 --> P_Col_6
+  C_R3C6 --> P_Col_6
+  C_R4C6 --> P_Col_6
+  C_R5C6 --> P_Col_6
+  C_R6C6 --> P_Col_6
+  C_R7C6 --> P_Col_6
+  C_R8C6 --> P_Col_6
+  C_R9C6 --> P_Col_6
+  P_Col_6 --> C_R1C6
+  P_Col_6 --> C_R2C6
+  P_Col_6 --> C_R3C6
+  P_Col_6 --> C_R4C6
+  P_Col_6 --> C_R5C6
+  P_Col_6 --> C_R6C6
+  P_Col_6 --> C_R7C6
+  P_Col_6 --> C_R8C6
+  P_Col_6 --> C_R9C6
+  C_R1C7 --> P_Col_7
+  C_R2C7 --> P_Col_7
+  C_R3C7 --> P_Col_7
+  C_R4C7 --> P_Col_7
+  C_R5C7 --> P_Col_7
+  C_R6C7 --> P_Col_7
+  C_R7C7 --> P_Col_7
+  C_R8C7 --> P_Col_7
+  C_R9C7 --> P_Col_7
+  P_Col_7 --> C_R1C7
+  P_Col_7 --> C_R2C7
+  P_Col_7 --> C_R3C7
+  P_Col_7 --> C_R4C7
+  P_Col_7 --> C_R5C7
+  P_Col_7 --> C_R6C7
+  P_Col_7 --> C_R7C7
+  P_Col_7 --> C_R8C7
+  P_Col_7 --> C_R9C7
+  C_R1C8 --> P_Col_8
+  C_R2C8 --> P_Col_8
+  C_R3C8 --> P_Col_8
+  C_R4C8 --> P_Col_8
+  C_R5C8 --> P_Col_8
+  C_R6C8 --> P_Col_8
+  C_R7C8 --> P_Col_8
+  C_R8C8 --> P_Col_8
+  C_R9C8 --> P_Col_8
+  P_Col_8 --> C_R1C8
+  P_Col_8 --> C_R2C8
+  P_Col_8 --> C_R3C8
+  P_Col_8 --> C_R4C8
+  P_Col_8 --> C_R5C8
+  P_Col_8 --> C_R6C8
+  P_Col_8 --> C_R7C8
+  P_Col_8 --> C_R8C8
+  P_Col_8 --> C_R9C8
+  C_R1C9 --> P_Col_9
+  C_R2C9 --> P_Col_9
+  C_R3C9 --> P_Col_9
+  C_R4C9 --> P_Col_9
+  C_R5C9 --> P_Col_9
+  C_R6C9 --> P_Col_9
+  C_R7C9 --> P_Col_9
+  C_R8C9 --> P_Col_9
+  C_R9C9 --> P_Col_9
+  P_Col_9 --> C_R1C9
+  P_Col_9 --> C_R2C9
+  P_Col_9 --> C_R3C9
+  P_Col_9 --> C_R4C9
+  P_Col_9 --> C_R5C9
+  P_Col_9 --> C_R6C9
+  P_Col_9 --> C_R7C9
+  P_Col_9 --> C_R8C9
+  P_Col_9 --> C_R9C9
+  C_R1C1 --> P_Box_1_1
+  C_R1C2 --> P_Box_1_1
+  C_R1C3 --> P_Box_1_1
+  C_R2C1 --> P_Box_1_1
+  C_R2C2 --> P_Box_1_1
+  C_R2C3 --> P_Box_1_1
+  C_R3C1 --> P_Box_1_1
+  C_R3C2 --> P_Box_1_1
+  C_R3C3 --> P_Box_1_1
+  P_Box_1_1 --> C_R1C1
+  P_Box_1_1 --> C_R1C2
+  P_Box_1_1 --> C_R1C3
+  P_Box_1_1 --> C_R2C1
+  P_Box_1_1 --> C_R2C2
+  P_Box_1_1 --> C_R2C3
+  P_Box_1_1 --> C_R3C1
+  P_Box_1_1 --> C_R3C2
+  P_Box_1_1 --> C_R3C3
+  C_R1C4 --> P_Box_1_2
+  C_R1C5 --> P_Box_1_2
+  C_R1C6 --> P_Box_1_2
+  C_R2C4 --> P_Box_1_2
+  C_R2C5 --> P_Box_1_2
+  C_R2C6 --> P_Box_1_2
+  C_R3C4 --> P_Box_1_2
+  C_R3C5 --> P_Box_1_2
+  C_R3C6 --> P_Box_1_2
+  P_Box_1_2 --> C_R1C4
+  P_Box_1_2 --> C_R1C5
+  P_Box_1_2 --> C_R1C6
+  P_Box_1_2 --> C_R2C4
+  P_Box_1_2 --> C_R2C5
+  P_Box_1_2 --> C_R2C6
+  P_Box_1_2 --> C_R3C4
+  P_Box_1_2 --> C_R3C5
+  P_Box_1_2 --> C_R3C6
+  C_R1C7 --> P_Box_1_3
+  C_R1C8 --> P_Box_1_3
+  C_R1C9 --> P_Box_1_3
+  C_R2C7 --> P_Box_1_3
+  C_R2C8 --> P_Box_1_3
+  C_R2C9 --> P_Box_1_3
+  C_R3C7 --> P_Box_1_3
+  C_R3C8 --> P_Box_1_3
+  C_R3C9 --> P_Box_1_3
+  P_Box_1_3 --> C_R1C7
+  P_Box_1_3 --> C_R1C8
+  P_Box_1_3 --> C_R1C9
+  P_Box_1_3 --> C_R2C7
+  P_Box_1_3 --> C_R2C8
+  P_Box_1_3 --> C_R2C9
+  P_Box_1_3 --> C_R3C7
+  P_Box_1_3 --> C_R3C8
+  P_Box_1_3 --> C_R3C9
+  C_R4C1 --> P_Box_2_1
+  C_R4C2 --> P_Box_2_1
+  C_R4C3 --> P_Box_2_1
+  C_R5C1 --> P_Box_2_1
+  C_R5C2 --> P_Box_2_1
+  C_R5C3 --> P_Box_2_1
+  C_R6C1 --> P_Box_2_1
+  C_R6C2 --> P_Box_2_1
+  C_R6C3 --> P_Box_2_1
+  P_Box_2_1 --> C_R4C1
+  P_Box_2_1 --> C_R4C2
+  P_Box_2_1 --> C_R4C3
+  P_Box_2_1 --> C_R5C1
+  P_Box_2_1 --> C_R5C2
+  P_Box_2_1 --> C_R5C3
+  P_Box_2_1 --> C_R6C1
+  P_Box_2_1 --> C_R6C2
+  P_Box_2_1 --> C_R6C3
+  C_R4C4 --> P_Box_2_2
+  C_R4C5 --> P_Box_2_2
+  C_R4C6 --> P_Box_2_2
+  C_R5C4 --> P_Box_2_2
+  C_R5C5 --> P_Box_2_2
+  C_R5C6 --> P_Box_2_2
+  C_R6C4 --> P_Box_2_2
+  C_R6C5 --> P_Box_2_2
+  C_R6C6 --> P_Box_2_2
+  P_Box_2_2 --> C_R4C4
+  P_Box_2_2 --> C_R4C5
+  P_Box_2_2 --> C_R4C6
+  P_Box_2_2 --> C_R5C4
+  P_Box_2_2 --> C_R5C5
+  P_Box_2_2 --> C_R5C6
+  P_Box_2_2 --> C_R6C4
+  P_Box_2_2 --> C_R6C5
+  P_Box_2_2 --> C_R6C6
+  C_R4C7 --> P_Box_2_3
+  C_R4C8 --> P_Box_2_3
+  C_R4C9 --> P_Box_2_3
+  C_R5C7 --> P_Box_2_3
+  C_R5C8 --> P_Box_2_3
+  C_R5C9 --> P_Box_2_3
+  C_R6C7 --> P_Box_2_3
+  C_R6C8 --> P_Box_2_3
+  C_R6C9 --> P_Box_2_3
+  P_Box_2_3 --> C_R4C7
+  P_Box_2_3 --> C_R4C8
+  P_Box_2_3 --> C_R4C9
+  P_Box_2_3 --> C_R5C7
+  P_Box_2_3 --> C_R5C8
+  P_Box_2_3 --> C_R5C9
+  P_Box_2_3 --> C_R6C7
+  P_Box_2_3 --> C_R6C8
+  P_Box_2_3 --> C_R6C9
+  C_R7C1 --> P_Box_3_1
+  C_R7C2 --> P_Box_3_1
+  C_R7C3 --> P_Box_3_1
+  C_R8C1 --> P_Box_3_1
+  C_R8C2 --> P_Box_3_1
+  C_R8C3 --> P_Box_3_1
+  C_R9C1 --> P_Box_3_1
+  C_R9C2 --> P_Box_3_1
+  C_R9C3 --> P_Box_3_1
+  P_Box_3_1 --> C_R7C1
+  P_Box_3_1 --> C_R7C2
+  P_Box_3_1 --> C_R7C3
+  P_Box_3_1 --> C_R8C1
+  P_Box_3_1 --> C_R8C2
+  P_Box_3_1 --> C_R8C3
+  P_Box_3_1 --> C_R9C1
+  P_Box_3_1 --> C_R9C2
+  P_Box_3_1 --> C_R9C3
+  C_R7C4 --> P_Box_3_2
+  C_R7C5 --> P_Box_3_2
+  C_R7C6 --> P_Box_3_2
+  C_R8C4 --> P_Box_3_2
+  C_R8C5 --> P_Box_3_2
+  C_R8C6 --> P_Box_3_2
+  C_R9C4 --> P_Box_3_2
+  C_R9C5 --> P_Box_3_2
+  C_R9C6 --> P_Box_3_2
+  P_Box_3_2 --> C_R7C4
+  P_Box_3_2 --> C_R7C5
+  P_Box_3_2 --> C_R7C6
+  P_Box_3_2 --> C_R8C4
+  P_Box_3_2 --> C_R8C5
+  P_Box_3_2 --> C_R8C6
+  P_Box_3_2 --> C_R9C4
+  P_Box_3_2 --> C_R9C5
+  P_Box_3_2 --> C_R9C6
+  C_R7C7 --> P_Box_3_3
+  C_R7C8 --> P_Box_3_3
+  C_R7C9 --> P_Box_3_3
+  C_R8C7 --> P_Box_3_3
+  C_R8C8 --> P_Box_3_3
+  C_R8C9 --> P_Box_3_3
+  C_R9C7 --> P_Box_3_3
+  C_R9C8 --> P_Box_3_3
+  C_R9C9 --> P_Box_3_3
+  P_Box_3_3 --> C_R7C7
+  P_Box_3_3 --> C_R7C8
+  P_Box_3_3 --> C_R7C9
+  P_Box_3_3 --> C_R8C7
+  P_Box_3_3 --> C_R8C8
+  P_Box_3_3 --> C_R8C9
+  P_Box_3_3 --> C_R9C7
+  P_Box_3_3 --> C_R9C8
+  P_Box_3_3 --> C_R9C9
+```

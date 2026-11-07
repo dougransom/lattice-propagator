@@ -1,0 +1,17 @@
+digraph "MultDemo" {
+  rankdir="LR";
+  node [fontname="Helvetica", fontsize=10];
+  edge [fontname="Helvetica", fontsize=9];
+
+  C_X [label="X\n0.0", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
+  C_Y [label="Y\n⊥", shape=box, style="filled,dashed", fillcolor="#f8f9fa", color="#adb5bd"];
+  C_Z [label="Z\n⊥", shape=box, style="filled,dashed", fillcolor="#f8f9fa", color="#adb5bd"];
+  P_Mult_X_Y_Z [label="Mult_X_Y_Z", shape=component, style=filled, fillcolor="#f7fafc", color="#2d3748"];
+
+  C_X -> P_Mult_X_Y_Z;
+  C_Y -> P_Mult_X_Y_Z;
+  C_Z -> P_Mult_X_Y_Z;
+  P_Mult_X_Y_Z -> C_X;
+  P_Mult_X_Y_Z -> C_Y;
+  P_Mult_X_Y_Z -> C_Z;
+}

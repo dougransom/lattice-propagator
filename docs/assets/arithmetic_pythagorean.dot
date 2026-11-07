@@ -1,0 +1,33 @@
+digraph "FormulaDemo" {
+  rankdir="LR";
+  node [fontname="Helvetica", fontsize=10];
+  edge [fontname="Helvetica", fontsize=9];
+
+  C_a [label="a\n3.0", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
+  C_b [label="b\n4.0", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
+  C_node___a_a___b_b__ [label="((a*a)+(b*b))\n25.0", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
+  C_node__a_a_ [label="(a*a)\n9.0", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
+  C_node__b_b_ [label="(b*b)\n16.0", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
+  P_add__a_a___b_b_ [label="add_(a*a)_(b*b)", shape=component, style=filled, fillcolor="#f7fafc", color="#2d3748"];
+  P_mul_a_a [label="mul_a_a", shape=component, style=filled, fillcolor="#f7fafc", color="#2d3748"];
+  P_mul_b_b [label="mul_b_b", shape=component, style=filled, fillcolor="#f7fafc", color="#2d3748"];
+
+  C_a -> P_mul_a_a;
+  C_a -> P_mul_a_a;
+  C_node__a_a_ -> P_mul_a_a;
+  P_mul_a_a -> C_a;
+  P_mul_a_a -> C_a;
+  P_mul_a_a -> C_node__a_a_;
+  C_b -> P_mul_b_b;
+  C_b -> P_mul_b_b;
+  C_node__b_b_ -> P_mul_b_b;
+  P_mul_b_b -> C_b;
+  P_mul_b_b -> C_b;
+  P_mul_b_b -> C_node__b_b_;
+  C_node__a_a_ -> P_add__a_a___b_b_;
+  C_node__b_b_ -> P_add__a_a___b_b_;
+  C_node___a_a___b_b__ -> P_add__a_a___b_b_;
+  P_add__a_a___b_b_ -> C_node__a_a_;
+  P_add__a_a___b_b_ -> C_node__b_b_;
+  P_add__a_a___b_b_ -> C_node___a_a___b_b__;
+}

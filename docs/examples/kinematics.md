@@ -77,4 +77,45 @@ assert isinstance(eta_collision.value, IntervalValue)
 print(f"Safe braking margin: minimum {eta_collision.value.min_val:.2f} s remaining.")
 assert 3.0 <= eta_collision.value.min_val <= 3.5
 assert 4.5 <= eta_collision.value.max_val <= 5.0
+
+# Export and persist network diagrams
+from pathlib import Path
+
+assets_dir = Path("docs/assets")
+if assets_dir.is_dir():
+    (assets_dir / "kinematics_radar_tracker.mmd").write_text(
+        net.generate_mermaid(), encoding="utf-8"
+    )
+    (assets_dir / "kinematics_radar_tracker.dot").write_text(net.generate_dot(), encoding="utf-8")
 ```
+
+---
+
+## 3. Kinematic Radar Network Topology & Live Visualization
+
+The `RatePropagator` estimates the approach velocity distribution (as a `GaussianValue`) and projects collision ETA bounds (as an `IntervalValue`):
+
+```mermaid
+graph LR
+  classDef bottom fill:#f8f9fa,stroke:#adb5bd,stroke-dasharray: 4 4,color:#6c757d;
+  classDef contradiction fill:#fff5f5,stroke:#e53e3e,stroke-width:2px,color:#9b2c2c;
+  classDef interval fill:#ebf8ff,stroke:#3182ce,stroke-width:1.5px;
+  classDef gaussian fill:#f0fff4,stroke:#38a169,stroke-width:1.5px;
+  classDef discrete fill:#faf5ff,stroke:#805ad5,stroke-width:1.5px;
+  classDef cell fill:#edf2f7,stroke:#4a5568,stroke-width:1.5px;
+  classDef value fill:#edf2f7,stroke:#4a5568,stroke-width:1.5px;
+  classDef set fill:#faf5ff,stroke:#805ad5,stroke-width:1.5px;
+  classDef belief fill:#f0fff4,stroke:#38a169,stroke-width:1.5px;
+  classDef propagator fill:#f7fafc,stroke:#2d3748,stroke-width:1.5px;
+  C_dist["dist<br/>⊥"]:::bottom
+  C_eta_collision["eta_collision<br/>[3.40, 4.80]s"]:::interval
+  C_velocity["velocity<br/>-20.00 ± 2.77m/s"]:::gaussian
+  P_RadarTracker["RadarTracker"]:::propagator
+  C_dist --> P_RadarTracker
+  P_RadarTracker --> C_velocity
+  P_RadarTracker --> C_eta_collision
+```
+
+### Downloadable Diagram Assets
+- [Mermaid Diagram Source (`kinematics_radar_tracker.mmd`)](../assets/kinematics_radar_tracker.mmd)
+- [Graphviz DOT Specification (`kinematics_radar_tracker.dot`)](../assets/kinematics_radar_tracker.dot)

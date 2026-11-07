@@ -148,11 +148,57 @@ print(f"DDB retracted assumption: {culprit}")
 print(f"Learned nogood: {tms.nogoods}")
 assert culprit == "hyp_R1C1_5"
 assert frozenset({"hyp_R1C1_5"}) in tms.nogoods
+
+# Export and persist full network diagrams
+from pathlib import Path
+
+assets_dir = Path("docs/assets")
+if assets_dir.is_dir():
+    (assets_dir / "sudoku_network.mmd").write_text(net_ddb.generate_mermaid(), encoding="utf-8")
+    (assets_dir / "sudoku_network.dot").write_text(net_ddb.generate_dot(), encoding="utf-8")
 ```
 
 ---
 
-## 3. Architecture Diagram (Human View)
+## 3. Constraint Network Visualization & Neighborhood Slicing
+
+A full $9 \times 9$ Sudoku network contains 81 discrete domain cells and 27 `AllDifferentPropagator` constraints (Rows, Columns, and $3 \times 3$ Boxes).
+
+### Constraint Neighborhood of Hypothesized Cell `R1C1`
+
+Using [`NetworkGraph.from_slice`](../api/graph.md), we extract the immediate constraint neighborhood for `R1C1` ($Row_1, Col_1, Box_{1,1}$):
+
+```mermaid
+graph LR
+  classDef bottom fill:#f8f9fa,stroke:#adb5bd,stroke-dasharray: 4 4,color:#6c757d;
+  classDef contradiction fill:#fff5f5,stroke:#e53e3e,stroke-width:2px,color:#9b2c2c;
+  classDef interval fill:#ebf8ff,stroke:#3182ce,stroke-width:1.5px;
+  classDef gaussian fill:#f0fff4,stroke:#38a169,stroke-width:1.5px;
+  classDef discrete fill:#faf5ff,stroke:#805ad5,stroke-width:1.5px;
+  classDef cell fill:#edf2f7,stroke:#4a5568,stroke-width:1.5px;
+  classDef value fill:#edf2f7,stroke:#4a5568,stroke-width:1.5px;
+  classDef set fill:#faf5ff,stroke:#805ad5,stroke-width:1.5px;
+  classDef belief fill:#f0fff4,stroke:#38a169,stroke-width:1.5px;
+  classDef propagator fill:#f7fafc,stroke:#2d3748,stroke-width:1.5px;
+  C_R1C1["R1C1<br/>{1, 2, 4, 6, 7, 8}"]:::discrete
+  P_Box_1_1["Box_1_1"]:::propagator
+  P_Col_1["Col_1"]:::propagator
+  P_Row_1["Row_1"]:::propagator
+  C_R1C1 --> P_Row_1
+  P_Row_1 --> C_R1C1
+  C_R1C1 --> P_Col_1
+  P_Col_1 --> C_R1C1
+  C_R1C1 --> P_Box_1_1
+  P_Box_1_1 --> C_R1C1
+```
+
+### Downloadable Full Network Assets (81 Cells, 27 Propagators)
+- [Mermaid Diagram Source (`sudoku_network.mmd`)](../assets/sudoku_network.mmd)
+- [Graphviz DOT Specification (`sudoku_network.dot`)](../assets/sudoku_network.dot)
+
+---
+
+## 4. Architecture Diagram (Human View)
 
 ```mermaid
 graph TD

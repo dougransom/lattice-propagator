@@ -1,0 +1,72 @@
+```mermaid
+graph LR
+  classDef bottom fill:#f8f9fa,stroke:#adb5bd,stroke-dasharray: 4 4,color:#6c757d;
+  classDef contradiction fill:#fff5f5,stroke:#e53e3e,stroke-width:2px,color:#9b2c2c;
+  classDef interval fill:#ebf8ff,stroke:#3182ce,stroke-width:1.5px;
+  classDef gaussian fill:#f0fff4,stroke:#38a169,stroke-width:1.5px;
+  classDef discrete fill:#faf5ff,stroke:#805ad5,stroke-width:1.5px;
+  classDef cell fill:#edf2f7,stroke:#4a5568,stroke-width:1.5px;
+  classDef value fill:#edf2f7,stroke:#4a5568,stroke-width:1.5px;
+  classDef set fill:#faf5ff,stroke:#805ad5,stroke-width:1.5px;
+  classDef belief fill:#f0fff4,stroke:#38a169,stroke-width:1.5px;
+  classDef propagator fill:#f7fafc,stroke:#2d3748,stroke-width:1.5px;
+  C_I["I<br/>0.04A"]:::value
+  C_R1["R1<br/>100.0Ω"]:::value
+  C_R2["R2<br/>200.0Ω"]:::value
+  C_Req["Req<br/>300.0Ω"]:::value
+  C_Vdrop1["Vdrop1<br/>4.0V"]:::value
+  C_Vdrop2["Vdrop2<br/>8.0V"]:::value
+  C_Vg["Vg<br/>0.0V"]:::value
+  C_Vmid["Vmid<br/>8.0V"]:::value
+  C_Vs["Vs<br/>12.0V"]:::value
+  C_Vtotal["Vtotal<br/>12.0V"]:::value
+  P_KCL_Drop1["KCL_Drop1"]:::propagator
+  P_KCL_Drop2["KCL_Drop2"]:::propagator
+  P_Ohm_R1["Ohm_R1"]:::propagator
+  P_Ohm_R2["Ohm_R2"]:::propagator
+  P_Ohm_Total["Ohm_Total"]:::propagator
+  P_Req_Series["Req_Series"]:::propagator
+  P_V_Total_Drop["V_Total_Drop"]:::propagator
+  C_R1 --> P_Req_Series
+  C_R2 --> P_Req_Series
+  C_Req --> P_Req_Series
+  P_Req_Series --> C_R1
+  P_Req_Series --> C_R2
+  P_Req_Series --> C_Req
+  C_Vg --> P_V_Total_Drop
+  C_Vtotal --> P_V_Total_Drop
+  C_Vs --> P_V_Total_Drop
+  P_V_Total_Drop --> C_Vg
+  P_V_Total_Drop --> C_Vtotal
+  P_V_Total_Drop --> C_Vs
+  C_I --> P_Ohm_Total
+  C_Req --> P_Ohm_Total
+  C_Vtotal --> P_Ohm_Total
+  P_Ohm_Total --> C_I
+  P_Ohm_Total --> C_Req
+  P_Ohm_Total --> C_Vtotal
+  C_I --> P_Ohm_R1
+  C_R1 --> P_Ohm_R1
+  C_Vdrop1 --> P_Ohm_R1
+  P_Ohm_R1 --> C_I
+  P_Ohm_R1 --> C_R1
+  P_Ohm_R1 --> C_Vdrop1
+  C_I --> P_Ohm_R2
+  C_R2 --> P_Ohm_R2
+  C_Vdrop2 --> P_Ohm_R2
+  P_Ohm_R2 --> C_I
+  P_Ohm_R2 --> C_R2
+  P_Ohm_R2 --> C_Vdrop2
+  C_Vmid --> P_KCL_Drop1
+  C_Vdrop1 --> P_KCL_Drop1
+  C_Vs --> P_KCL_Drop1
+  P_KCL_Drop1 --> C_Vmid
+  P_KCL_Drop1 --> C_Vdrop1
+  P_KCL_Drop1 --> C_Vs
+  C_Vg --> P_KCL_Drop2
+  C_Vdrop2 --> P_KCL_Drop2
+  C_Vmid --> P_KCL_Drop2
+  P_KCL_Drop2 --> C_Vg
+  P_KCL_Drop2 --> C_Vdrop2
+  P_KCL_Drop2 --> C_Vmid
+```

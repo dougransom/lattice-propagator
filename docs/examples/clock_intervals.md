@@ -159,7 +159,49 @@ assert delivered_power.value == IntervalValue(0.0, 0.0)
 # Energy Delivered: 6.0 h × [7.0, 7.4] kW = [42.0, 44.4] kWh
 min_energy = corridor.length * delivered_power.value.min_val
 print(f"\nTotal Potential Energy Delivered during Corridor: {6.0 * 7.2:.1f} kWh")
+
+# Export and persist network diagrams
+from pathlib import Path
+
+assets_dir = Path("docs/assets")
+if assets_dir.is_dir():
+    (assets_dir / "clock_intervals_ev_scheduler.mmd").write_text(
+        net.generate_mermaid(), encoding="utf-8"
+    )
+    (assets_dir / "clock_intervals_ev_scheduler.dot").write_text(
+        net.generate_dot(), encoding="utf-8"
+    )
 ```
+
+### Overnight EV Scheduler Network Topology & Live Visualization
+
+The network couples the fused circular interval corridor to the actuator control switch:
+
+```mermaid
+graph LR
+  classDef bottom fill:#f8f9fa,stroke:#adb5bd,stroke-dasharray: 4 4,color:#6c757d;
+  classDef contradiction fill:#fff5f5,stroke:#e53e3e,stroke-width:2px,color:#9b2c2c;
+  classDef interval fill:#ebf8ff,stroke:#3182ce,stroke-width:1.5px;
+  classDef gaussian fill:#f0fff4,stroke:#38a169,stroke-width:1.5px;
+  classDef discrete fill:#faf5ff,stroke:#805ad5,stroke-width:1.5px;
+  classDef cell fill:#edf2f7,stroke:#4a5568,stroke-width:1.5px;
+  classDef value fill:#edf2f7,stroke:#4a5568,stroke-width:1.5px;
+  classDef set fill:#faf5ff,stroke:#805ad5,stroke-width:1.5px;
+  classDef belief fill:#f0fff4,stroke:#38a169,stroke-width:1.5px;
+  classDef propagator fill:#f7fafc,stroke:#2d3748,stroke-width:1.5px;
+  C_charging_corridor["Consolidated Charging Corridor<br/>[0.5, 6.5] (mod 24.0)"]:::value
+  C_delivered_power["delivered_power<br/>[7.00, 7.40]kW"]:::interval
+  C_enable_switch["enable_switch<br/>True"]:::value
+  C_nominal_power["nominal_power<br/>[7.00, 7.40]kW"]:::interval
+  P_EV_Contactor["EV_Contactor"]:::propagator
+  C_enable_switch --> P_EV_Contactor
+  C_nominal_power --> P_EV_Contactor
+  P_EV_Contactor --> C_delivered_power
+```
+
+#### Downloadable Diagram Assets
+- [Mermaid Diagram Source (`clock_intervals_ev_scheduler.mmd`)](../assets/clock_intervals_ev_scheduler.mmd)
+- [Graphviz DOT Specification (`clock_intervals_ev_scheduler.dot`)](../assets/clock_intervals_ev_scheduler.dot)
 
 ---
 

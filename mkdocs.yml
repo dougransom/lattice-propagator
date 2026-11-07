@@ -91,6 +91,7 @@ nav:
       - lattice: api/lattice.md
       - primitives: api/primitives.md
       - tms: api/tms.md
+      - graph: api/graph.md
   - Development & Contributing:
       - Developer Guide: development.md
       - Contributing: contributing.md

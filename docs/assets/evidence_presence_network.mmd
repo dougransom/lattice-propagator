@@ -1,0 +1,38 @@
+```mermaid
+graph LR
+  classDef bottom fill:#f8f9fa,stroke:#adb5bd,stroke-dasharray: 4 4,color:#6c757d;
+  classDef contradiction fill:#fff5f5,stroke:#e53e3e,stroke-width:2px,color:#9b2c2c;
+  classDef interval fill:#ebf8ff,stroke:#3182ce,stroke-width:1.5px;
+  classDef gaussian fill:#f0fff4,stroke:#38a169,stroke-width:1.5px;
+  classDef discrete fill:#faf5ff,stroke:#805ad5,stroke-width:1.5px;
+  classDef cell fill:#edf2f7,stroke:#4a5568,stroke-width:1.5px;
+  classDef value fill:#edf2f7,stroke:#4a5568,stroke-width:1.5px;
+  classDef set fill:#faf5ff,stroke:#805ad5,stroke-width:1.5px;
+  classDef belief fill:#f0fff4,stroke:#38a169,stroke-width:1.5px;
+  classDef propagator fill:#f7fafc,stroke:#2d3748,stroke-width:1.5px;
+  C_car_garage["car_garage<br/>⊥"]:::bottom
+  C_conflict_k["conflict_k<br/>0.792"]:::value
+  C_fused_presence["fused_presence<br/>BeliefMass({A}: 0.952, {K, L}: 0.038, {A, B, K, L}: 0.010)"]:::belief
+  C_is_home["is_home<br/>False"]:::value
+  C_light_bathroom["light_bathroom<br/>False"]:::value
+  C_living_kitchen_mode["living_kitchen_mode<br/>ALL_OFF"]:::value
+  C_moto_garage["moto_garage<br/>BeliefMass({A}: 0.990, {A, B, K, L}: 0.010)"]:::belief
+  C_phone_proxy2["phone_proxy2<br/>BeliefMass({K, L}: 0.800, {A, B, K, L}: 0.200)"]:::belief
+  C_watch_proxy2["watch_proxy2<br/>BeliefMass({A, B, K, L}: 1.000)"]:::belief
+  P_BathDecision["BathDecision"]:::propagator
+  P_DS_PresenceCombiner["DS_PresenceCombiner"]:::propagator
+  P_HomeDecision["HomeDecision"]:::propagator
+  P_LivingKitchenDecision["LivingKitchenDecision"]:::propagator
+  C_watch_proxy2 --> P_DS_PresenceCombiner
+  C_phone_proxy2 --> P_DS_PresenceCombiner
+  C_car_garage --> P_DS_PresenceCombiner
+  C_moto_garage --> P_DS_PresenceCombiner
+  P_DS_PresenceCombiner --> C_fused_presence
+  P_DS_PresenceCombiner --> C_conflict_k
+  C_fused_presence --> P_HomeDecision
+  P_HomeDecision --> C_is_home
+  C_fused_presence --> P_BathDecision
+  P_BathDecision --> C_light_bathroom
+  C_fused_presence --> P_LivingKitchenDecision
+  P_LivingKitchenDecision --> C_living_kitchen_mode
+```

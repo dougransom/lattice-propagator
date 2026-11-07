@@ -16,6 +16,17 @@ Primary Citations & Literature:
 
 from __future__ import annotations
 
+from .graph import (
+    GraphCluster,
+    GraphEdge,
+    GraphNode,
+    NetworkGraph,
+    NetworkVisitor,
+    classify_lattice_state,
+    detect_cycles,
+    walk_downstream,
+    walk_upstream,
+)
 from .lattice import (
     BOTTOM,
     BeliefMassValue,
@@ -92,6 +103,9 @@ __all__ = [
     "FlatValue",
     "FunctionalPropagator",
     "GaussianValue",
+    "GraphCluster",
+    "GraphEdge",
+    "GraphNode",
     "IntervalValue",
     "Justification",
     "KalmanEstimatorPropagator",
@@ -100,7 +114,9 @@ __all__ = [
     "MapLattice",
     "MobileLinkPropagator",
     "MultiplierPropagator",
+    "NetworkGraph",
     "NetworkTMS",
+    "NetworkVisitor",
     "OrderedInterval",
     "Premise",
     "Propagator",
@@ -114,8 +130,12 @@ __all__ = [
     "TrajectorySegment",
     "Translator",
     "TruthMaintenanceSystem",
+    "classify_lattice_state",
+    "detect_cycles",
     "format_lattice_value",
     "lift_propagator",
     "make_template_translator",
     "merge_lattice",
+    "walk_downstream",
+    "walk_upstream",
 ]

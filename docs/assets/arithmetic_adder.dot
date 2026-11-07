@@ -1,0 +1,17 @@
+digraph "AdderDemo" {
+  rankdir="LR";
+  node [fontname="Helvetica", fontsize=10];
+  edge [fontname="Helvetica", fontsize=9];
+
+  C_A [label="A\n[10.00, 17.00]", shape=box, style="filled,rounded", fillcolor="#ebf8ff", color="#3182ce"];
+  C_B [label="B\n[5.00, 12.00]", shape=box, style="filled,rounded", fillcolor="#ebf8ff", color="#3182ce"];
+  C_C [label="C\n[18.00, 22.00]", shape=box, style="filled,rounded", fillcolor="#ebf8ff", color="#3182ce"];
+  P_Add_A_B_C [label="Add_A_B_C", shape=component, style=filled, fillcolor="#f7fafc", color="#2d3748"];
+
+  C_A -> P_Add_A_B_C;
+  C_B -> P_Add_A_B_C;
+  C_C -> P_Add_A_B_C;
+  P_Add_A_B_C -> C_A;
+  P_Add_A_B_C -> C_B;
+  P_Add_A_B_C -> C_C;
+}

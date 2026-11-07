@@ -1,0 +1,23 @@
+```mermaid
+graph LR
+  classDef bottom fill:#f8f9fa,stroke:#adb5bd,stroke-dasharray: 4 4,color:#6c757d;
+  classDef contradiction fill:#fff5f5,stroke:#e53e3e,stroke-width:2px,color:#9b2c2c;
+  classDef interval fill:#ebf8ff,stroke:#3182ce,stroke-width:1.5px;
+  classDef gaussian fill:#f0fff4,stroke:#38a169,stroke-width:1.5px;
+  classDef discrete fill:#faf5ff,stroke:#805ad5,stroke-width:1.5px;
+  classDef cell fill:#edf2f7,stroke:#4a5568,stroke-width:1.5px;
+  classDef value fill:#edf2f7,stroke:#4a5568,stroke-width:1.5px;
+  classDef set fill:#faf5ff,stroke:#805ad5,stroke-width:1.5px;
+  classDef belief fill:#f0fff4,stroke:#38a169,stroke-width:1.5px;
+  classDef propagator fill:#f7fafc,stroke:#2d3748,stroke-width:1.5px;
+  C_A["A<br/>[10.00, 17.00]"]:::interval
+  C_B["B<br/>[5.00, 12.00]"]:::interval
+  C_C["C<br/>[18.00, 22.00]"]:::interval
+  P_Add_A_B_C["Add_A_B_C"]:::propagator
+  C_A --> P_Add_A_B_C
+  C_B --> P_Add_A_B_C
+  C_C --> P_Add_A_B_C
+  P_Add_A_B_C --> C_A
+  P_Add_A_B_C --> C_B
+  P_Add_A_B_C --> C_C
+```

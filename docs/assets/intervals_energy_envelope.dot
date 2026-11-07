@@ -1,0 +1,17 @@
+digraph "EnergyEnvelope" {
+  rankdir="LR";
+  node [fontname="Helvetica", fontsize=10];
+  edge [fontname="Helvetica", fontsize=9];
+
+  C_ev_charger [label="ev_charger\n[3000.00, 6800.00]", shape=box, style="filled,rounded", fillcolor="#ebf8ff", color="#3182ce"];
+  C_heat_pump [label="heat_pump\n[1200.00, 2500.00]", shape=box, style="filled,rounded", fillcolor="#ebf8ff", color="#3182ce"];
+  C_total_power [label="total_power\n[4200.00, 8000.00]", shape=box, style="filled,rounded", fillcolor="#ebf8ff", color="#3182ce"];
+  P_SumPower [label="SumPower", shape=component, style=filled, fillcolor="#f7fafc", color="#2d3748"];
+
+  C_heat_pump -> P_SumPower;
+  C_ev_charger -> P_SumPower;
+  C_total_power -> P_SumPower;
+  P_SumPower -> C_heat_pump;
+  P_SumPower -> C_ev_charger;
+  P_SumPower -> C_total_power;
+}

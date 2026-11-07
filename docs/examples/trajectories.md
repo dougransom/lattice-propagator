@@ -66,7 +66,46 @@ assert abs(signal_cell.value.min_val - 50.0) < 1.0
 t_cell.set_value(FlatValue(30.0), overwrite=True)
 net.run()
 assert signal_cell.value == IntervalValue(100.0, 100.0)
+
+# Export and persist network diagrams
+from pathlib import Path
+
+assets_dir = Path("docs/assets")
+if assets_dir.is_dir():
+    (assets_dir / "trajectories_lighting_curve.mmd").write_text(
+        net.generate_mermaid(), encoding="utf-8"
+    )
+    (assets_dir / "trajectories_lighting_curve.dot").write_text(
+        net.generate_dot(), encoding="utf-8"
+    )
 ```
+
+### Trajectory Generator Network Topology & Live Visualization
+
+The `TrajectoryEnvelopePropagator` translates continuous elapsed duration into bounded signal output envelopes:
+
+```mermaid
+graph LR
+  classDef bottom fill:#f8f9fa,stroke:#adb5bd,stroke-dasharray: 4 4,color:#6c757d;
+  classDef contradiction fill:#fff5f5,stroke:#e53e3e,stroke-width:2px,color:#9b2c2c;
+  classDef interval fill:#ebf8ff,stroke:#3182ce,stroke-width:1.5px;
+  classDef gaussian fill:#f0fff4,stroke:#38a169,stroke-width:1.5px;
+  classDef discrete fill:#faf5ff,stroke:#805ad5,stroke-width:1.5px;
+  classDef cell fill:#edf2f7,stroke:#4a5568,stroke-width:1.5px;
+  classDef value fill:#edf2f7,stroke:#4a5568,stroke-width:1.5px;
+  classDef set fill:#faf5ff,stroke:#805ad5,stroke-width:1.5px;
+  classDef belief fill:#f0fff4,stroke:#38a169,stroke-width:1.5px;
+  classDef propagator fill:#f7fafc,stroke:#2d3748,stroke-width:1.5px;
+  C_elapsed_time["elapsed_time<br/>15.0s"]:::value
+  C_lighting_output["lighting_output<br/>[50.00, 50.00]%"]:::interval
+  P_sunrise_curve["sunrise_curve"]:::propagator
+  C_elapsed_time --> P_sunrise_curve
+  P_sunrise_curve --> C_lighting_output
+```
+
+#### Downloadable Diagram Assets
+- [Mermaid Diagram Source (`trajectories_lighting_curve.mmd`)](../assets/trajectories_lighting_curve.mmd)
+- [Graphviz DOT Specification (`trajectories_lighting_curve.dot`)](../assets/trajectories_lighting_curve.dot)
 
 ### Supported Transition Easing Profiles
 

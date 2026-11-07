@@ -1,0 +1,39 @@
+```mermaid
+graph LR
+  classDef bottom fill:#f8f9fa,stroke:#adb5bd,stroke-dasharray: 4 4,color:#6c757d;
+  classDef contradiction fill:#fff5f5,stroke:#e53e3e,stroke-width:2px,color:#9b2c2c;
+  classDef interval fill:#ebf8ff,stroke:#3182ce,stroke-width:1.5px;
+  classDef gaussian fill:#f0fff4,stroke:#38a169,stroke-width:1.5px;
+  classDef discrete fill:#faf5ff,stroke:#805ad5,stroke-width:1.5px;
+  classDef cell fill:#edf2f7,stroke:#4a5568,stroke-width:1.5px;
+  classDef value fill:#edf2f7,stroke:#4a5568,stroke-width:1.5px;
+  classDef set fill:#faf5ff,stroke:#805ad5,stroke-width:1.5px;
+  classDef belief fill:#f0fff4,stroke:#38a169,stroke-width:1.5px;
+  classDef propagator fill:#f7fafc,stroke:#2d3748,stroke-width:1.5px;
+  C_a["a<br/>3.0"]:::value
+  C_b["b<br/>4.0"]:::value
+  C_node___a_a___b_b__["((a*a)+(b*b))<br/>25.0"]:::value
+  C_node__a_a_["(a*a)<br/>9.0"]:::value
+  C_node__b_b_["(b*b)<br/>16.0"]:::value
+  P_add__a_a___b_b_["add_(a*a)_(b*b)"]:::propagator
+  P_mul_a_a["mul_a_a"]:::propagator
+  P_mul_b_b["mul_b_b"]:::propagator
+  C_a --> P_mul_a_a
+  C_a --> P_mul_a_a
+  C_node__a_a_ --> P_mul_a_a
+  P_mul_a_a --> C_a
+  P_mul_a_a --> C_a
+  P_mul_a_a --> C_node__a_a_
+  C_b --> P_mul_b_b
+  C_b --> P_mul_b_b
+  C_node__b_b_ --> P_mul_b_b
+  P_mul_b_b --> C_b
+  P_mul_b_b --> C_b
+  P_mul_b_b --> C_node__b_b_
+  C_node__a_a_ --> P_add__a_a___b_b_
+  C_node__b_b_ --> P_add__a_a___b_b_
+  C_node___a_a___b_b__ --> P_add__a_a___b_b_
+  P_add__a_a___b_b_ --> C_node__a_a_
+  P_add__a_a___b_b_ --> C_node__b_b_
+  P_add__a_a___b_b_ --> C_node___a_a___b_b__
+```

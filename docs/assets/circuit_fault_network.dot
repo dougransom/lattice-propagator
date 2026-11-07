@@ -1,0 +1,35 @@
+digraph "FullAdderDiagnosis" {
+  rankdir="LR";
+  node [fontname="Helvetica", fontsize=10];
+  edge [fontname="Helvetica", fontsize=9];
+
+  C_A [label="A\nTrue", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
+  C_B [label="B\nFalse", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
+  C_C1 [label="C1\nFalse", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
+  C_C2 [label="C2\nTrue", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
+  C_Cin [label="Cin\nTrue", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
+  C_Cout [label="Cout\nTrue", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
+  C_S1 [label="S1\nTrue", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
+  C_Sum [label="Sum\nTrue", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
+  P_AND1 [label="AND1", shape=component, style=filled, fillcolor="#f7fafc", color="#2d3748"];
+  P_AND2 [label="AND2", shape=component, style=filled, fillcolor="#f7fafc", color="#2d3748"];
+  P_OR1 [label="OR1", shape=component, style=filled, fillcolor="#f7fafc", color="#2d3748"];
+  P_XOR1 [label="XOR1", shape=component, style=filled, fillcolor="#f7fafc", color="#2d3748"];
+  P_XOR2 [label="XOR2", shape=component, style=filled, fillcolor="#f7fafc", color="#2d3748"];
+
+  C_A -> P_XOR1;
+  C_B -> P_XOR1;
+  P_XOR1 -> C_S1;
+  C_S1 -> P_XOR2;
+  C_Cin -> P_XOR2;
+  P_XOR2 -> C_Sum;
+  C_A -> P_AND1;
+  C_B -> P_AND1;
+  P_AND1 -> C_C1;
+  C_S1 -> P_AND2;
+  C_Cin -> P_AND2;
+  P_AND2 -> C_C2;
+  C_C1 -> P_OR1;
+  C_C2 -> P_OR1;
+  P_OR1 -> C_Cout;
+}

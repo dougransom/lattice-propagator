@@ -24,9 +24,12 @@ from __future__ import annotations
 import math
 from abc import ABC, abstractmethod
 from collections import deque
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .graph import NetworkGraph
 
 from .lattice import (
     BOTTOM,
@@ -153,6 +156,38 @@ class Cell:
     ) -> ExplanationNode:
         """Generate a structured, localizable explanation node for this cell's state."""
         return self.get_or_create_tms().explain_node(unit=unit, depth=depth)
+
+    def walk_downstream(
+        self,
+        max_depth: int | None = None,
+    ) -> Iterator[Cell | Propagator]:
+        """Traverse downstream from this cell through observing propagators and consequences.
+
+        Args:
+            max_depth: Maximum traversal depth.
+
+        Returns:
+            Iterator over cells and propagators in breadth-first causal order.
+        """
+        from .graph import walk_downstream
+
+        return walk_downstream(self, max_depth=max_depth)
+
+    def walk_upstream(
+        self,
+        max_depth: int | None = None,
+    ) -> Iterator[Cell | Propagator]:
+        """Traverse upstream from this cell back to governing propagators and antecedent cells.
+
+        Args:
+            max_depth: Maximum traversal depth.
+
+        Returns:
+            Iterator over cells and propagators in upstream causal cone order.
+        """
+        from .graph import walk_upstream
+
+        return walk_upstream(self, max_depth=max_depth)
 
     def set_value(
         self,
@@ -2081,19 +2116,120 @@ class PropagatorNetwork:
             raise KeyError(f"Cell '{cell_id}' not found in network.")
         return self.cells[cell_id].explain_node(unit=unit, depth=depth)
 
-    def generate_mermaid(self) -> str:
-        """Generate a Mermaid diagram representing the network structure and state."""
-        lines = ["```mermaid", "graph LR"]
-        for p in self.propagators:
-            p_node = f'P_{p.name.replace(" ", "_")}["{p.name}"]'
-            for in_c in p.inputs:
-                c_node = f'C_{in_c.cell_id.replace(" ", "_")}["{in_c.cell_id}<br/>{in_c.value}"]'
-                lines.append(f"  {c_node} --> {p_node}")
-            for out_c in p.outputs:
-                c_node = f'C_{out_c.cell_id.replace(" ", "_")}["{out_c.cell_id}<br/>{out_c.value}"]'
-                lines.append(f"  {p_node} --> {c_node}")
-        lines.append("```")
-        return "\n".join(lines)
+    def to_graph(
+        self,
+        include_isolated: bool = True,
+        group_aliases: bool = True,
+    ) -> NetworkGraph:
+        """Convert this network into an intermediate NetworkGraph representation.
+
+        Args:
+            include_isolated: Whether to include cells not attached to any propagators.
+            group_aliases: Whether to group unified cells into alias clusters.
+
+        Returns:
+            NetworkGraph instance.
+        """
+        from .graph import NetworkGraph
+
+        return NetworkGraph.from_network(
+            self,
+            include_isolated=include_isolated,
+            group_aliases=group_aliases,
+        )
+
+    def walk_downstream(
+        self,
+        start: Cell | Sequence[Cell] | None = None,
+        max_depth: int | None = None,
+    ) -> Iterator[Cell | Propagator]:
+        """Traverse downstream from starting cells through observed propagators and consequences.
+
+        Args:
+            start: Starting cell(s). If None, all network cells are candidates.
+            max_depth: Maximum traversal depth.
+
+        Returns:
+            Iterator over cells and propagators in breadth-first causal order.
+        """
+        from .graph import walk_downstream
+
+        return walk_downstream(self, start=start, max_depth=max_depth)
+
+    def walk_upstream(
+        self,
+        target: Cell | Sequence[Cell] | None = None,
+        max_depth: int | None = None,
+    ) -> Iterator[Cell | Propagator]:
+        """Traverse upstream from target cells back to governing propagators and antecedent cells.
+
+        Args:
+            target: Target cell(s). If None, all network cells are candidates.
+            max_depth: Maximum traversal depth.
+
+        Returns:
+            Iterator over cells and propagators in upstream causal order.
+        """
+        from .graph import walk_upstream
+
+        return walk_upstream(self, target=target, max_depth=max_depth)
+
+    def detect_cycles(self) -> list[list[str]]:
+        """Detect feedback loops and cyclic dependencies in the network.
+
+        Returns:
+            List of detected elementary cycles.
+        """
+        from .graph import detect_cycles
+
+        return detect_cycles(self)
+
+    def generate_mermaid(
+        self,
+        orientation: str = "LR",
+        include_values: bool = True,
+        group_aliases: bool = True,
+        style_states: bool = True,
+    ) -> str:
+        """Generate a Mermaid diagram representing the network structure and state.
+
+        Args:
+            orientation: Flow direction ('LR', 'TD', 'RL', 'BT').
+            include_values: Whether to include formatted lattice values in cell labels.
+            group_aliases: Whether to render subgraphs for alias clusters.
+            style_states: Whether to attach semantic CSS classes.
+
+        Returns:
+            Formatted Mermaid markdown block.
+        """
+        return self.to_graph(group_aliases=group_aliases).to_mermaid(
+            orientation=orientation,
+            include_values=include_values,
+            group_aliases=group_aliases,
+            style_states=style_states,
+        )
+
+    def generate_dot(
+        self,
+        rankdir: str = "LR",
+        include_values: bool = True,
+        group_aliases: bool = True,
+    ) -> str:
+        """Generate a Graphviz DOT representation of the network.
+
+        Args:
+            rankdir: Rank direction ('LR', 'TB', 'RL', 'BT').
+            include_values: Whether to include formatted lattice values in cell labels.
+            group_aliases: Whether to render subgraphs for alias clusters.
+
+        Returns:
+            DOT specification string.
+        """
+        return self.to_graph(group_aliases=group_aliases).to_dot(
+            rankdir=rankdir,
+            include_values=include_values,
+            group_aliases=group_aliases,
+        )
 
 
 class ChoiceEngine:

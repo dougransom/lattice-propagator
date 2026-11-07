@@ -88,7 +88,52 @@ print(f"State after 2s: {state.value}")
 # Gaussian(μ=22.384, σ²=0.1919)
 print(f"Rate after 2s: {rate.value}")
 # Gaussian(μ=0.177, σ²=0.2255)
+
+# Export and persist network diagrams
+from pathlib import Path
+
+assets_dir = Path("docs/assets")
+if assets_dir.is_dir():
+    (assets_dir / "sensor_fusion_kalman.mmd").write_text(net.generate_mermaid(), encoding="utf-8")
+    (assets_dir / "sensor_fusion_kalman.dot").write_text(net.generate_dot(), encoding="utf-8")
+
+# Export and persist network diagrams
+from pathlib import Path
+
+assets_dir = Path("docs/assets")
+if assets_dir.is_dir():
+    (assets_dir / "sensor_fusion_kalman.mmd").write_text(net.generate_mermaid(), encoding="utf-8")
+    (assets_dir / "sensor_fusion_kalman.dot").write_text(net.generate_dot(), encoding="utf-8")
 ```
+
+### Kalman Tracking Network Topology & Live Visualization
+
+The `KalmanTracking` network links incoming observation streams to continuous Gaussian belief estimates for both physical temperature and warming/cooling velocity:
+
+```mermaid
+graph LR
+  classDef bottom fill:#f8f9fa,stroke:#adb5bd,stroke-dasharray: 4 4,color:#6c757d;
+  classDef contradiction fill:#fff5f5,stroke:#e53e3e,stroke-width:2px,color:#9b2c2c;
+  classDef interval fill:#ebf8ff,stroke:#3182ce,stroke-width:1.5px;
+  classDef gaussian fill:#f0fff4,stroke:#38a169,stroke-width:1.5px;
+  classDef discrete fill:#faf5ff,stroke:#805ad5,stroke-width:1.5px;
+  classDef cell fill:#edf2f7,stroke:#4a5568,stroke-width:1.5px;
+  classDef value fill:#edf2f7,stroke:#4a5568,stroke-width:1.5px;
+  classDef set fill:#faf5ff,stroke:#805ad5,stroke-width:1.5px;
+  classDef belief fill:#f0fff4,stroke:#38a169,stroke-width:1.5px;
+  classDef propagator fill:#f7fafc,stroke:#2d3748,stroke-width:1.5px;
+  C_Observation["Observation<br/>22.00 ± 1.39"]:::gaussian
+  C_Rate["Rate<br/>0.18 ± 0.93"]:::gaussian
+  C_State["State<br/>22.38 ± 0.86"]:::gaussian
+  P_ThermalKalman["ThermalKalman"]:::propagator
+  C_Observation --> P_ThermalKalman
+  P_ThermalKalman --> C_State
+  P_ThermalKalman --> C_Rate
+```
+
+#### Downloadable Diagram Assets
+- [Mermaid Diagram Source (`sensor_fusion_kalman.mmd`)](../assets/sensor_fusion_kalman.mmd)
+- [Graphviz DOT Specification (`sensor_fusion_kalman.dot`)](../assets/sensor_fusion_kalman.dot)
 
 ### How Kalman Propagation Works
 
