@@ -637,5 +637,141 @@ If no laundry is run:
 
 Because both branches satisfy all physical constraints and deadlines, the lattice network mathematically proves that the home's off-peak schedule is **robust against random occupant behavior**.
 
+---
+
+## 9. High-Impact Application Patterns for Dynamic Power Routing
+
+Beyond residential EV garages, the combination of join-semilattices, Truth Maintenance Systems, and $\pi$-calculus link mobility enables clean solutions to complex electrical distribution and microgrid problems. 
+
+Here are six high-impact architectural patterns:
+
+---
+
+### Pattern 1: Hierarchical Feeder Trees & NEC 220 Continuous Rating Enforcement
+
+Electrical infrastructure is hierarchical: utility transformers feed service panels, which feed subpanels, which feed branch circuits.
+
+```mermaid
+flowchart TD
+    Transformer["Utility Pole Transformer: [0.0, 50.0] kVA"]
+    Main["200A Main Panel: [0.0, 38.4] kW (NEC 80% continuous)"]
+    House["House Baseload: [1.2, 3.5] kW"]
+    Subpanel["100A Garage Subpanel: [0.0, 19.2] kW"]
+    EV1["EVSE 1: [0.0, 11.5] kW"]
+    EV2["EVSE 2: [0.0, 11.5] kW"]
+    HeatPump["Heat Pump: [0.0, 6.0] kW"]
+
+    Transformer --> Main
+    Main --> House
+    Main --> Subpanel
+    Subpanel --> EV1
+    Subpanel --> EV2
+    Subpanel --> HeatPump
+```
+
+- **The Challenge:** Downstream branch circuits (EVSE 1 at $11.5\,\text{kW}$, EVSE 2 at $11.5\,\text{kW}$, and a garage heat pump at $6.0\,\text{kW}$) total $29.0\,\text{kW}$, which exceeds the $19.2\,\text{kW}$ rating of the $100\,\text{A}$ subpanel feed.
+- **The Propagator Solution:** Every branch node is an `AdderPropagator`. 
+  - **Bidirectional Refinement:** Downstream telemetry pushes *lower bounds* upward, while upstream breaker ratings propagate *upper bounds* downward.
+  - When the heat pump starts up ($6.0\,\text{kW}$), subpanel headroom contracts. The interval intersection ($\sqcap$) instantly constrains the available budget across both EVSEs without requiring a central polling coordinator.
+
+---
+
+### Pattern 2: Microgrid Blackout Islanding & Defeasible Load Shedding
+
+When utility grid power drops out, hybrid solar-storage inverters transition to "islanded" off-grid mode. Inverter surge capacity is strictly finite (e.g., $8.0\,\text{kW}$ continuous).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Grid as Grid Voltage Sensor
+    participant TMS as Network TMS
+    participant Disp as MobileLinkPropagator
+    participant Crit as Critical Loads (Refrigeration, Medical)
+    participant NonCrit as Non-Critical (Water Heater, Pool, EVSE)
+
+    Note over Grid,NonCrit: Normal Operation (Grid = 240V)
+    Grid->>TMS: Premise: grid_connected = True (Defeasible Assumption)
+    Note over NonCrit: High-power links active [0.0, 25.0] kW
+
+    Note over Grid,NonCrit: Grid Blackout Detected!
+    Grid->>TMS: retract_source("grid_connected")
+    TMS->>Disp: Cascade TMS Retraction
+    Disp->>NonCrit: Retract all mobile power links
+    Note over NonCrit: Instantly relaxed to [0.0, 0.0] kW (Shed!)
+    Note over Crit: Battery capacity preserved exclusively for critical circuits
+```
+
+- **Why Imperative Scripts Fail:** Automation platforms like Home Assistant or Node-RED rely on sequential command loops (`turn_off_pool()`, `pause_ev()`, `turn_off_water_heater()`). If a single Zigbee/Matter message is delayed or dropped, the inverter trips on overcurrent, collapsing the entire microgrid.
+- **The Propagator Solution:** Power allocations to non-critical loads are justified by the defeasible premise `grid_connected`. 
+  - When an outage occurs, `NetworkTMS.retract_source("grid_connected")` triggers immediate dependency-directed retraction.
+  - All non-critical allocations collapse to $[0.0, 0.0]\,\text{kW}$ in a single propagation step, guaranteeing sub-second protection for the battery inverter.
+
+---
+
+### Pattern 3: Bidirectional V2H / V2G Storage Arbitrage & Peak Shaving
+
+Vehicle-to-Home (V2H) and Vehicle-to-Grid (V2G) systems turn EV batteries into bidirectional generators where power flow is signed: $P \in [-11.5, +11.5]\,\text{kW}$ (negative = discharging into the house, positive = charging).
+
+$$\text{Net Grid Import} = P_{\text{house\_loads}} - P_{\text{solar}} - P_{\text{v2h}}$$
+
+- **Dynamic Tariff Arbitrage:** During peak pricing windows, utility demand charges penalize importing more than $3.0\,\text{kW}$. We assert $\text{grid\_import} = [0.0, 3.0]\,\text{kW}$.
+- **Backward Propagation:** The propagator network naturally runs backward:
+  $$P_{\text{v2h}} = P_{\text{house\_loads}} - P_{\text{solar}} - \text{grid\_import}$$
+  If household cooking and laundry surge to $9.0\,\text{kW}$ with only $1.0\,\text{kW}$ solar, the network forces $P_{\text{v2h}} \sqsubseteq [5.0, 11.5]\,\text{kW}$, automatically commanding the vehicle to discharge and shave the grid peak.
+
+---
+
+### Pattern 4: Split-Phase 120V / 240V Neutral Leg Balancing
+
+North American residential service delivers two $120\,\text{V}$ legs ($L_1, L_2$) out of phase with a center-tapped neutral. Imbalanced loads ($|I_{L_1} - I_{L_2}| \gg 0$) force heavy return current through the neutral wire, causing resistive heat losses and voltage fluctuation.
+
+- **Contactor Assignment CSP:** High-draw single-phase loads (e.g., $120\,\text{V}$ server racks, window A/C units, portable heaters) can be switched between Leg 1 and Leg 2 via automated transfer relays.
+- **The Propagator Model:**
+  - Leg current accumulators: $I_{L_1} = \sum_{i} I_{1, i}$ and $I_{L_2} = \sum_{j} I_{2, j}$.
+  - Neutral constraint: $I_{\text{neutral}} = |I_{L_1} - I_{L_2}| \le I_{\text{neutral\_limit}}$.
+  - Discrete target domains (`DiscreteDomain({"leg_1", "leg_2"})`) bound contactor positions. As kitchen appliances cycle on $L_1$, `MobileLinkPropagator` shifts flexible server loads to $L_2$ to maintain neutral balance.
+
+---
+
+### Pattern 5: Multi-Tenant / Fleet EVSE Tokenized Fair-Share Queuing
+
+Commercial depots and multi-family residential complexes often share a single constrained service transformer across dozens of charging stalls ($80.0\,\text{kW}$ service for 20 stalls).
+
+```mermaid
+flowchart LR
+    Budget["Shared Service Capacity: [0.0, 80.0] kW"]
+    
+    subgraph PriorityDispatcher ["Urgency-Driven Mobile Dispatcher"]
+        V1["Vehicle A (Departs in 30 min, SOC 35%): Priority 1"]
+        V2["Vehicle B (Departs in 3 hours, SOC 50%): Priority 2"]
+        V3["Vehicle C (Overnight stay, SOC 20%): Priority 3"]
+    end
+    
+    Budget --> PriorityDispatcher
+    PriorityDispatcher == "High-Power Link" ==> V1
+    PriorityDispatcher -. "Shared Headroom" .-> V2
+    PriorityDispatcher -. "Standby [0.0, 0.0] kW" .-> V3
+```
+
+- **Urgency Refinement:**
+  - Charging urgency is computed as an interval:
+    $$\text{Urgency} = \frac{\Delta E_{\text{deficit}}}{t_{\text{departure}} - t_{\text{now}}}$$
+  - Stalls with $\text{Urgency} \ge P_{\text{charger\_max}}$ form the **committed core** and receive dedicated high-power mobile links.
+  - When Vehicle A unplugs, $\pi$-calculus scope extrusion and link retraction instantly shift the full $11.5\,\text{kW}$ allocation to Vehicle B, ensuring optimal utilization of the transformer without manual schedule recomputation.
+
+---
+
+### Pattern 6: Multi-Physics Heterogeneous Fusion (Thermal Limits × Electrical Envelope)
+
+Battery charging acceptance is constrained by cell chemistry and internal temperature ($\theta$). Charging a frozen battery ($< 5^\circ\text{C}$) causes lithium plating, while charging a hot battery ($> 45^\circ\text{C}$) degrades cell longevity.
+
+- **Heterogeneous Lattice Interlocking:**
+  - **Thermal Layer:** Gaussian sensor fusion (`GaussianValue(μ=18.0, σ²=0.5)`) estimates battery core temperature from surface thermistors and heat-dissipation models.
+  - **C-Rate Envelope Propagator:** A lookup propagator maps temperature bounds to allowable charging power $[0.0, P_{\text{thermal\_max}}(\theta)]$.
+  - **Lattice Intersection:** The final charging command is the join across electrical, physical, and contractual constraints:
+    $$P_{\text{ev}} = P_{\text{solar\_surplus}} \sqcap P_{\text{circuit\_safety}} \sqcap P_{\text{thermal\_limit}}(\theta)$$
+  - As internal resistance warms the battery, the thermal envelope broadens, automatically allowing the electrical propagator to step up charging power.
+
+
 
 
