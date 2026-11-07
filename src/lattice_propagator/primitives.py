@@ -946,7 +946,7 @@ class MobileLinkPropagator(Propagator):
         )
 
         # 1. Retract from vacated targets
-        for old_key in list(self._active_bindings.keys() - bindings.keys()):
+        for old_key in self._active_bindings.keys() - bindings.keys():
             old_premise_id = self._active_bindings.pop(old_key)
             old_cell = self._resolve_target(old_key, network)
             if old_cell is not None:
@@ -1086,9 +1086,8 @@ class FunctionalPropagator(Propagator):
     def alert(self, network: PropagatorNetwork) -> None:
         if any(isinstance(c.value, (Bottom, Contradiction)) for c in self.inputs):
             return
-        args = [c.value for c in self.inputs]
         try:
-            res = self.fn(*args)
+            res = self.fn(*(c.value for c in self.inputs))
             if isinstance(res, LatticeValue) and not isinstance(res, Bottom):
                 self.emit(self.output, res, overwrite=self.overwrite)
         except (TypeError, ValueError, ArithmeticError):
@@ -1958,7 +1957,7 @@ class AllDifferentPropagator(Propagator):
             if determined is None:
                 return False
 
-            for v, source_cell in list(determined.items()):
+            for v, source_cell in determined.items():
                 did_change, has_conflict = self._eliminate_value_from_peers(v, source_cell)
                 if has_conflict:
                     return False
@@ -2118,7 +2117,7 @@ class ChoiceEngine:
 
     def is_solved(self) -> bool:
         """Check if all cells in the network are non-bottom, determined, and contradiction-free."""
-        cells = self.variables if self.variables is not None else list(self.network.cells.values())
+        cells = self.variables if self.variables is not None else self.network.cells.values()
         for cell in cells:
             val = cell.value
             if isinstance(val, (Bottom, Contradiction)):
@@ -2131,7 +2130,7 @@ class ChoiceEngine:
         """Find an undetermined cell using First-Fail / MRV (Minimum Remaining Values) heuristic."""
         best_cell = None
         min_candidates = float("inf")
-        cells = self.variables if self.variables is not None else list(self.network.cells.values())
+        cells = self.variables if self.variables is not None else self.network.cells.values()
         for cell in cells:
             val = cell.value
             if (

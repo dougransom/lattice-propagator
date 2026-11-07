@@ -400,17 +400,15 @@ class TruthMaintenanceSystem:
         translator: Translator | None = None,
     ) -> str:
         """Produce an actionable diagnostic and DDB retraction recommendation for a contradiction."""
-        parts = []
-        for p in active_premises:
-            kind = "assumption" if p.is_assumption else "ground"
-            parts.append(
-                f"{_clean_source_id(p.source_id)}={format_lattice_value(p.value, unit=self.unit)} ({kind}, conf={p.confidence:.2f})"
-            )
-        premises_str = ", ".join(parts)
+        premises_str = ", ".join(
+            f"{_clean_source_id(p.source_id)}={format_lattice_value(p.value, unit=self.unit)} ({'assumption' if p.is_assumption else 'ground'}, conf={p.confidence:.2f})"
+            for p in active_premises
+        )
 
-        assumptions = [p for p in active_premises if p.is_assumption]
-        weakest = (
-            min(assumptions, key=lambda p: (p.confidence, -p.timestamp)) if assumptions else None
+        weakest = min(
+            (p for p in active_premises if p.is_assumption),
+            key=lambda p: (p.confidence, -p.timestamp),
+            default=None,
         )
         rec_key, rec_params, rec = (
             (
@@ -495,19 +493,15 @@ class TruthMaintenanceSystem:
 
         # Handle Contradiction
         if isinstance(fused, Contradiction):
-            parts = []
-            for p in active:
-                kind = "assumption" if p.is_assumption else "ground"
-                parts.append(
-                    f"{_clean_source_id(p.source_id)}={format_lattice_value(p.value, unit=self.unit)} ({kind}, conf={p.confidence:.2f})"
-                )
-            premises_str = ", ".join(parts)
+            premises_str = ", ".join(
+                f"{_clean_source_id(p.source_id)}={format_lattice_value(p.value, unit=self.unit)} ({'assumption' if p.is_assumption else 'ground'}, conf={p.confidence:.2f})"
+                for p in active
+            )
 
-            assumptions = [p for p in active if p.is_assumption]
-            weakest = (
-                min(assumptions, key=lambda p: (p.confidence, -p.timestamp))
-                if assumptions
-                else None
+            weakest = min(
+                (p for p in active if p.is_assumption),
+                key=lambda p: (p.confidence, -p.timestamp),
+                default=None,
             )
             rec_key, rec_params, rec = (
                 (
@@ -570,11 +564,10 @@ class TruthMaintenanceSystem:
 
         # 2. Gaussian fusion explanation
         elif gaussian_premises and isinstance(fused, GaussianValue):
-            parts = [
+            src_list = ", ".join(
                 f"{_clean_source_id(src)} ({val.mean:.1f}{eff_unit})"
                 for src, val in gaussian_premises
-            ]
-            src_list = ", ".join(parts)
+            )
             node = ExplanationNode(
                 key="tms.gaussian_fusion",
                 parameters={
@@ -596,11 +589,10 @@ class TruthMaintenanceSystem:
         elif all(isinstance(p.value, IntervalValue) for p in active) and isinstance(
             fused, IntervalValue
         ):
-            parts = [
+            src_list = ", ".join(
                 f"{_clean_source_id(p.source_id)} [{p.value.min_val:.1f}, {p.value.max_val:.1f}]{eff_unit}"
                 for p in active
-            ]
-            src_list = ", ".join(parts)
+            )
             node = ExplanationNode(
                 key="tms.interval_fusion",
                 parameters={
@@ -622,10 +614,9 @@ class TruthMaintenanceSystem:
         elif all(isinstance(p.value, DiscreteDomain) for p in active) and isinstance(
             fused, DiscreteDomain
         ):
-            parts = [
+            src_list = ", ".join(
                 f"{_clean_source_id(p.source_id)} {format_lattice_value(p.value)}" for p in active
-            ]
-            src_list = ", ".join(parts)
+            )
             node = ExplanationNode(
                 key="tms.discrete_fusion",
                 parameters={
@@ -643,15 +634,14 @@ class TruthMaintenanceSystem:
 
         # 5. Generic lattice fusion fallback
         else:
-            parts = [
-                f"{_clean_source_id(p.source_id)} ({format_lattice_value(p.value, unit=eff_unit)})"
-                for p in active
-            ]
             node = ExplanationNode(
                 key="tms.generic_fusion",
                 parameters={
                     "count": len(active),
-                    "sources": ", ".join(parts),
+                    "sources": ", ".join(
+                        f"{_clean_source_id(p.source_id)} ({format_lattice_value(p.value, unit=eff_unit)})"
+                        for p in active
+                    ),
                     "fused": format_lattice_value(fused, unit=eff_unit),
                     "degraded_note": degraded_note,
                     "degraded_missing": degraded_missing,

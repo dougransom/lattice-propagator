@@ -450,8 +450,7 @@ class MapLattice(LatticeValue):
     mapping: Mapping[Any, LatticeValue] = field(default_factory=dict)
 
     def __repr__(self) -> str:
-        pairs = [f"{k}: {v}" for k, v in self.mapping.items()]
-        return f"MapLattice{{{', '.join(pairs)}}}"
+        return f"MapLattice{{{', '.join(f'{k}: {v}' for k, v in self.mapping.items())}}}"
 
 
 @dataclass(frozen=True)
@@ -572,10 +571,10 @@ class BeliefMassValue(LatticeValue):
         return BeliefMassValue(masses=new_masses, frame=self.frame | other.frame)
 
     def __repr__(self) -> str:
-        items = []
-        for s, m in sorted(self.masses.items(), key=lambda x: -x[1]):
-            name = "{" + ", ".join(sorted(s)) + "}"
-            items.append(f"{name}: {m:.3f}")
+        items = (
+            f"{{{', '.join(sorted(s))}}}: {m:.3f}"
+            for s, m in sorted(self.masses.items(), key=lambda x: -x[1])
+        )
         return f"BeliefMass({', '.join(items)})"
 
 
