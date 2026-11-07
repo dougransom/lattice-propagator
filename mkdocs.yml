@@ -1,4 +1,5 @@
 site_name: Lattice Propagator
+site_url: https://dougransom.github.io/lattice-propagator/
 site_description: Monotonic constraint networks and sensor fusion over partial-information lattices
 site_author: Doug Ransom
 repo_name: lattice-propagator
@@ -6,6 +7,7 @@ repo_url: https://github.com/dougransom/lattice-propagator
 
 theme:
   name: material
+  custom_dir: overrides
   language: en
   palette:
     - scheme: default

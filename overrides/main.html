@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block extrahead %}
+  {{ super() }}
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": {{ page.title | default(config.site_name) | tojson }},
+    "description": {{ (page.meta.description if page and page.meta and page.meta.description else config.site_description) | tojson }},
+    "url": {{ (page.canonical_url if page and page.canonical_url else config.site_url | default(config.repo_url)) | tojson }},
+    "inLanguage": "en",
+    "author": {
+      "@type": "Person",
+      "name": {{ config.site_author | tojson }}
+    },
+    "publisher": {
+      "@type": "Organization",
+      "name": {{ config.site_name | tojson }},
+      "url": {{ (config.site_url | default(config.repo_url)) | tojson }}
+    }
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareSourceCode",
+    "name": "lattice-propagator",
+    "description": {{ config.site_description | tojson }},
+    "programmingLanguage": "Python",
+    "runtimePlatform": "Python 3.11+",
+    "codeRepository": {{ config.repo_url | tojson }},
+    "license": "https://opensource.org/licenses/MIT",
+    "author": {
+      "@type": "Person",
+      "name": {{ config.site_author | tojson }}
+    }
+  }
+  </script>
+{% endblock %}
+

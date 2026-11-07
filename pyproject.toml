@@ -23,6 +23,20 @@ keywords = [
     "home-assistant",
     "sussman",
     "radul",
+    "pi-calculus",
+    "dynamic-topology",
+    "mobile-links",
+    "truth-maintenance-system",
+    "tms",
+    "dependency-directed-backtracking",
+    "kalman-filter",
+    "interval-arithmetic",
+    "dempster-shafer",
+    "graph-visualization",
+    "mermaid",
+    "graphviz",
+    "reactive-programming",
+    "building-automation",
 ]
 
 classifiers = [

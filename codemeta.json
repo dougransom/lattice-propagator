@@ -25,7 +25,21 @@
     "sensor-fusion",
     "home-assistant",
     "sussman",
-    "radul"
+    "radul",
+    "pi-calculus",
+    "dynamic-topology",
+    "mobile-links",
+    "truth-maintenance-system",
+    "tms",
+    "dependency-directed-backtracking",
+    "kalman-filter",
+    "interval-arithmetic",
+    "dempster-shafer",
+    "graph-visualization",
+    "mermaid",
+    "graphviz",
+    "reactive-programming",
+    "building-automation"
   ],
   "citation": [
     "https://dspace.mit.edu/handle/1721.1/44215",
