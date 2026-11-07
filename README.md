@@ -23,7 +23,39 @@ Originally developed for sensor fusion, thermal dynamics, and fuzzy control in [
 
 ---
 
-## 2. Core Concepts
+## 2. Video Lectures, Talks & Additional Resources
+
+Key presentations, video lectures, and open-source materials exploring propagator networks, partial-information lattices ($L, \sqsubseteq, \sqcup$), and monotonic computation:
+
+### Video Lectures & Conference Talks
+- **Gerald Jay Sussman (MIT)**:
+  - [*"We Really Don't Know How to Compute!"* (Strange Loop 2011)](https://www.youtube.com/watch?v=HB5TrK7A4pI) — Keynote contrasting traditional brittle sequential computation with resilient biological systems, demonstrating why multi-directional propagators, lattices ($L, \sqsubseteq, \sqcup$), and Truth Maintenance Systems are essential for scalable robustness.
+- **Edward Kmett (MIRI / Haskell)**:
+  - [*"Propagators Part 1"* (YOW! 2016)](https://www.youtube.com/watch?v=0igYOKcIWUs) & [*"Propagators"* (Functional Conf 2019 / Boston Haskell)](https://www.youtube.com/watch?v=acwNyptC_Yg) — In-depth technical breakdown of join-semilattices, observable sharing in functional programming, fixed-point computation, and unifying propagators with SAT solvers, CRDTs, and Datalog.
+- **George Wilson (Data61 / QFPL)**:
+  - [*"An Intuition for Propagators"* (Compose Melbourne 2019)](https://www.youtube.com/watch?v=VXl0EEd8IcU) — Pedagogical introduction breaking down the conceptual separation between stateful monotonic cells and stateless reactive propagator machines.
+- **Arun Isaac (GeneNetwork / GNU Guix)**:
+  - [*"Propagator networks for degenerate computation"* (DeclMed '23 / ICFP)](https://www.youtube.com/watch?v=O129sWf8a1g) — Presentation on applying Scheme-based propagator networks for fault-tolerant, degenerate (redundant) execution in bioinformatics pipelines.
+
+### Author Web Pages, Code & Further Resources
+- **Gerald Jay Sussman**:
+  - [MIT CSAIL Faculty Page](https://groups.csail.mit.edu/mac/users/gjs/)
+  - [MIT CSAIL Propagator Directory](https://groups.csail.mit.edu/mac/users/gjs/propagators/) — Sussman's archive containing reference Scheme implementations, technical reports, and research notes.
+- **Edward Kmett**:
+  - [*The Comonad.Reader: Propagators*](http://comonad.com/reader/2015/propagators/) — Foundational blog post outlining observable sharing and propagator graph construction in Haskell.
+  - [GitHub: `ekmett/propagators`](https://github.com/ekmett/propagators) — Haskell library exploring propagator networks with automatic expression translation via observable sharing.
+- **George Wilson**:
+  - [Queensland Functional Programming Lab (QFPL): An Intuition for Propagators](https://qfpl.io/posts/an-intuition-for-propagators/) — Companion article covering lattice merge operations and monotonicity.
+  - [GitHub: `qfpl/an-intuition-for-propagators-slides`](https://github.com/qfpl/an-intuition-for-propagators-slides) — Slide deck and diagrams from the Compose Melbourne presentation.
+  - [GitHub: `qfpl/propagator-examples`](https://github.com/qfpl/propagator-examples) — Practical Haskell examples demonstrating bidirectional arithmetic, temperature conversions, and logic gates.
+- **Arun Isaac**:
+  - [Arun Isaac's Research Site (`systemreboot.net`)](https://systemreboot.net/) — Publications, essays, and software projects.
+  - [Git: `ravanan` (CWL Runner via Propagators)](https://git.systemreboot.net/ravanan/) — Common Workflow Language runner powered by a Scheme propagator network core (`propnet.scm`).
+  - [SIGPLAN DeclMed '23 Program & Paper Abstract](https://popl24.sigplan.org/details/declmed-2023-papers/4/Propagator-networks-for-degenerate-computation).
+
+---
+
+## 3. Core Concepts
 
 ### A. The Information Semilattice
 Information within a Cell is structured as a join-semilattice (L, <=, merge), ensuring that merging partial evidence is associative, commutative, and idempotent:
@@ -67,7 +99,7 @@ Information within a Cell is structured as a join-semilattice (L, <=, merge), en
 
 ---
 
-## 3. Development & Documentation
+## 4. Development & Documentation
 
 All developer tasks (testing, linting, building docs, packaging) are managed via the unified CLI `lattice-dev` (or the `./scripts/dev.sh` wrapper):
 
@@ -95,7 +127,7 @@ For detailed contributor guides, see [DEVELOPMENT.md](DEVELOPMENT.md) and [CONTR
 
 ---
 
-## 4. Home Assistant Core Import Compliance (`REQ-HAC`)
+## 5. Home Assistant Core Import Compliance (`REQ-HAC`)
 
 `lattice-propagator` is engineered to satisfy all architectural and packaging requirements for direct importation into Home Assistant Core integrations:
 
@@ -114,5 +146,5 @@ For formal specifications, see [docs/requirements.md (Section 5: REQ-HAC)](docs/
 
 ---
 
-## 5. License
-MIT License. Copyright (c) Doug Ransom.
+## 6. License
+MIT License. Copyright © Doug Ransom.
