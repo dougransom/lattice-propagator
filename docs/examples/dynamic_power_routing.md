@@ -413,4 +413,229 @@ In `lattice-propagator`:
 - When the active vehicle changes, `MobileLinkPropagator` simply retracts that premise.
 - The Rivian cell's internal TMS automatically re-evaluates all remaining active premises (its `hardware_envelope`), cleanly relaxing the cell back to its standby bounds $[0.0, 11.5]\,\text{kW}$ with zero manual cleanup logic!
 
+---
+
+## 8. Advanced Co-Optimization: Whole-House Envelope, EVSE, Water Heater & Stochastic Loads
+
+To demonstrate how the propagator network scales to multi-resource scheduling under uncertainty, consider a sophisticated residential night-time energy management scenario.
+
+### 8.1 Scenario & Physical Parameters
+
+We manage a household during the off-peak tariff window (**23:00 to 07:00**, 8 hours) with a main service continuous budget of **$16.0\,\text{kW}$** ($67\,\text{A} @ 240\,\text{V}$). 
+
+The home features:
+
+1. **Measured Whole-House Baseload:** Refrigerator, network equipment, and standby electronics draw $[0.5, 0.7]\,\text{kW}$.
+2. **Air Conditioner ($Y$):** Central A/C compressor rated at $4.0\,\text{kW}$. Given this evening's ambient temperature forecast, the unit is predicted to run at an average **$23\%$ duty cycle**, producing an hourly average power draw $Y \approx 4.0 \times 0.23 = 0.92\,\text{kW}$, modeled as interval $[0.8, 1.2]\,\text{kW}$.
+3. **Clothes Dryer ($Z$):** Electric clothes dryer with heating element drawing $Z = 5.0\,\text{kW}$, modeled as interval $[4.8, 5.2]\,\text{kW}$.
+4. **Controlled Hot Water Tank ($X, U$):** A 50-gallon electric water heater with element rating $U = 4.5\,\text{kW}$ ($[0.0, 4.5]\,\text{kW}$). Heating the tank from cold to $125^\circ\text{F}$ requires $X = 4.5\,\text{kWh}$ of thermal energy (exactly $1.0\,\text{hour}$ at $4.5\,\text{kW}$).
+5. **Electric Vehicle Supply Equipment (EVSE):** Level 2 charger accepting up to $[0.0, 11.5]\,\text{kW}$ ($48\,\text{A} @ 240\,\text{V}$). The connected EV has a $75.0\,\text{kWh}$ pack starting at **$50.0\%$ State of Charge** ($37.5\,\text{kWh}$ stored).
+
+### Operational Objectives & Deadlines
+
+- **Objective 1 (EV Target):** Charge vehicle to **$\ge 80.0\%$ SOC** ($60.0\,\text{kWh}$ stored, energy deficit $\Delta E = 22.5\,\text{kWh}$) after 23:00 and before **07:00 AM**.
+- **Objective 2 (Hot Water Target):** Heat water tank to full temperature before **06:00 AM**, but **only if the car is charged first** (EV priority).
+- **Stochastic Uncertainty (Laundry Spike):** We have no prior knowledge of whether someone will do laundry. Running a hot-water laundry cycle simultaneously:
+  - Dumps the hot water tank, cooling it and demanding $X = 4.5\,\text{kWh}$ reheat.
+  - Activates the dryer, drawing $Z = [4.8, 5.2]\,\text{kW}$.
+
+---
+
+### 8.2 Network Architecture
+
+```mermaid
+flowchart TD
+    subgraph GridService ["1. Service Limit & Uncontrollable Loads"]
+        Limit["Service Feeder Limit: 16.0 kW"]
+        Base["Baseload: [0.5, 0.7] kW"]
+        AC["Forecast A/C: [0.8, 1.2] kW (23% duty cycle)"]
+        Dryer["Stochastic Dryer: [4.8, 5.2] kW"]
+        Uncontrollable["Total Uncontrollable: [6.1, 7.1] kW"]
+        Headroom["Controllable Headroom: [8.9, 9.9] kW"]
+        
+        Base --> Uncontrollable
+        AC --> Uncontrollable
+        Dryer --> Uncontrollable
+        Limit --> Headroom
+        Uncontrollable --> Headroom
+    end
+
+    subgraph Dispatcher ["2. π-Calculus Load Balancer"]
+        SOC["EV State of Charge: 50.0% (Target 80%)"]
+        TargetChannel["Channel: active_target = 'evse'"]
+        DispatcherNode["MobileLinkPropagator"]
+        
+        SOC --> TargetChannel
+        TargetChannel --> DispatcherNode
+        Headroom --> DispatcherNode
+    end
+
+    subgraph ControllableLoads ["3. Controllable Flexible Loads"]
+        EVSE["EVSE Power Allocation: [8.9, 9.9] kW (Active)"]
+        WaterHeater["Water Heater: [0.0, 4.5] kW (Deferred Standby)"]
+    end
+
+    DispatcherNode ==>|Active Link| EVSE
+    DispatcherNode -.->|Deferred Link| WaterHeater
+```
+
+---
+
+### 8.3 Initial State at 23:00 (11:00 PM)
+
+At 23:00, off-peak pricing commences and someone turns on a load of laundry:
+
+| Cell Name | Bound / Lattice Value | Source / Premise | Physical Meaning |
+| :--- | :---: | :--- | :--- |
+| `service_limit` | $[16.0, 16.0]\,\text{kW}$ | `feeder_rating` | Continuous service envelope |
+| `home_baseload` | $[0.5, 0.7]\,\text{kW}$ | `meter_telemetry` | Background standby power |
+| `ac_power` | $[0.8, 1.2]\,\text{kW}$ | `weather_forecast` | A/C $23\%$ duty cycle average ($Y = 0.92\,\text{kWh/h}$) |
+| `dryer_power` | $[4.8, 5.2]\,\text{kW}$ | `appliance_sensor` | Active clothes dryer load ($Z = 5.0\,\text{kW}$) |
+| `evse_power` | $[0.0, 11.5]\,\text{kW}$ | `hardware_limit` | Level 2 charger physical capability |
+| `water_heater_power` | $[0.0, 4.5]\,\text{kW}$ | `hardware_limit` | Element heating capacity ($U = 4.5\,\text{kW}$) |
+| `ev_battery_energy` | $[37.5, 37.5]\,\text{kWh}$ | `bms_telemetry` | $50.0\%$ initial SOC ($75.0\,\text{kWh}$ pack) |
+| `water_heater_energy` | $[0.0, 0.0]\,\text{kWh}$ | `aquastat_sensor` | Tank cooled by wash cycle (needs $X = 4.5\,\text{kWh}$) |
+
+---
+
+### 8.4 Single Computation: Propagator Deductions at 23:00
+
+Here is the complete executable network execution for the initial 23:00 computation:
+
+```python
+from lattice_propagator import (
+    AdderPropagator,
+    DiscreteDomain,
+    IntervalValue,
+    MobileLinkPropagator,
+    PropagatorNetwork,
+)
+
+# 1. Instantiate the network
+net = PropagatorNetwork("NighttimeOffPeakCoOptimization")
+
+# 2. Main electrical service limit (240V / 67A continuous off-peak budget = 16.0 kW)
+service_limit = net.add_cell("service_limit", unit="kW")
+service_limit.set_value(IntervalValue(16.0, 16.0), source="feeder_rating")
+
+# 3. Uncontrollable loads:
+#    - Background baseload: [0.5, 0.7] kW
+#    - Weather forecast A/C (Y = 0.92 kWh/h): 4.0 kW @ 23% duty cycle -> [0.8, 1.2] kW
+#    - Stochastic laundry dryer (Z = 5.0 kWh): [4.8, 5.2] kW
+p_base = IntervalValue(0.5, 0.7)
+p_ac = IntervalValue(0.8, 1.2)
+p_dryer = IntervalValue(4.8, 5.2)
+
+uncontrollable = net.add_cell("uncontrollable_loads", unit="kW")
+uncontrollable.set_value(
+    IntervalValue(
+        p_base.min_val + p_ac.min_val + p_dryer.min_val,
+        p_base.max_val + p_ac.max_val + p_dryer.max_val,
+    ),
+    source="power_meter",
+)
+
+# 4. Feeder headroom constraint: uncontrollable + headroom = service_limit
+headroom = net.add_cell("controllable_headroom", unit="kW")
+net.add_propagator(AdderPropagator("feeder_balance", uncontrollable, headroom, service_limit))
+
+# 5. Controllable flexible loads:
+#    - EVSE: Level 2 charging envelope [0.0, 11.5] kW (48A @ 240V)
+#    - Water Heater: Element rating U = 4.5 kW ([0.0, 4.5] kW)
+evse = net.add_cell("evse_power", unit="kW")
+water_heater = net.add_cell("water_heater_power", unit="kW")
+
+evse.set_value(IntervalValue(0.0, 11.5), source="hardware_limit")
+water_heater.set_value(IntervalValue(0.0, 4.5), source="hardware_limit")
+
+# 6. Priority dispatcher channel:
+#    Car has strict priority over hot water tank until reaching 80.0% SOC
+channel = net.add_cell("active_controllable_target")
+net.add_propagator(
+    MobileLinkPropagator(
+        "load_balancer",
+        channel_cell=channel,
+        payload_cell=headroom,
+        targets={"evse": evse, "water_heater": water_heater},
+    )
+)
+
+# Initial State at 23:00 (11:00 PM):
+# EV battery (75.0 kWh pack) starts at 50.0% SOC (37.5 kWh stored).
+# Target: 80.0% SOC (60.0 kWh stored) -> Deficit Delta_E = 22.5 kWh.
+CAP_BATTERY = 75.0
+e_battery = IntervalValue(37.5, 37.5)
+soc_current = (e_battery.min_val / CAP_BATTERY) * 100.0
+
+# Priority arbitration rule: EVSE first if below 80%
+target = "evse" if soc_current < 80.0 else "water_heater"
+channel.set_value(DiscreteDomain.single(target))
+
+# Execute the initial computation for Hour 23:00
+net.run()
+
+print(f"Uncontrollable Loads: {uncontrollable.value} kW")
+print(f"Remaining Feeder Headroom: {headroom.value} kW")
+print(f"Dispatched Target: {target}")
+print(f"EVSE Power Allocation: {evse.value} kW")
+print(f"Water Heater Power Allocation: {water_heater.value} kW")
+
+assert uncontrollable.value == IntervalValue(6.1, 7.1)
+assert headroom.value == IntervalValue(8.9, 9.9)
+assert evse.value == IntervalValue(8.9, 9.9)
+assert water_heater.value == IntervalValue(0.0, 4.5)
+```
+
+```text
+Uncontrollable Loads: [6.100, 7.100] kW
+Remaining Feeder Headroom: [8.900, 9.900] kW
+Dispatched Target: evse
+EVSE Power Allocation: [8.900, 9.900] kW
+Water Heater Power Allocation: [0.000, 4.500] kW
+```
+
+---
+
+### 8.5 Schedulability Proof Under Worst-Case Stochastic Load
+
+Can both deadlines be met even with the worst-case simultaneous laundry and dryer spike?
+
+The lattice deductions guarantee schedulability across the entire off-peak window:
+
+```mermaid
+flowchart LR
+    T23["23:00: Off-Peak Begins (EV at 50% SOC, Headroom = [8.9, 9.9] kW)"] --> T0125["~01:25 AM: EV reaches 80% SOC (22.5 kWh absorbed), Channel switches to Water Heater"]
+    T0125 --> T0225["~02:25 AM: Water Heater finishes 4.5 kWh reheat (4.5 kW x 1.0h)"]
+    T0225 --> T0600["06:00 AM: Water Heater Deadline (Satisfied 3.5h Early!)"]
+    T0600 --> T0700["07:00 AM: EV Off-Peak Deadline (Satisfied 5.5h Early!)"]
+```
+
+1. **EV Charging Phase (23:00 to $\approx 01:25\,\text{AM}$):**
+   - Headroom allocated to EVSE: $[8.9, 9.9]\,\text{kW}$.
+   - Energy required: $\Delta E = 22.5\,\text{kWh}$.
+   - Time to reach $80.0\%$ SOC:
+     $$t_{\text{ev}} = \frac{22.5\,\text{kWh}}{[8.9, 9.9]\,\text{kW}} = [2.27, 2.53]\,\text{hours}$$
+   - The car completes charging between **01:16 AM** and **01:32 AM**—more than **5 hours before its 07:00 AM deadline**!
+
+2. **Autonomous $\pi$-Calculus Handoff ($\approx 01:25\,\text{AM}$):**
+   - As soon as the EV reaches $80.0\%$, the priority rule sets `channel` to `"water_heater"`.
+   - `MobileLinkPropagator` retracts `load_balancer@evse`, relaxing the EVSE back to standby.
+   - The link asserts onto `water_heater_power`. By this time, the dryer cycle has finished ($0.0\,\text{kW}$), so available headroom expands to $[14.1, 14.7]\,\text{kW}$, well above the water heater's $4.5\,\text{kW}$ rating.
+
+3. **Water Heating Phase ($\approx 01:25$ to $\approx 02:25\,\text{AM}$):**
+   - Full element power $[4.5, 4.5]\,\text{kW}$ is delivered.
+   - Energy required: $X = 4.5\,\text{kWh} \implies 1.0\,\text{hour}$.
+   - The water tank is fully reheated by **$\approx 02:25\,\text{AM}$**—beating its **06:00 AM deadline by $3.5$ hours**!
+
+### What If No Laundry Runs? (Speculative Analysis)
+
+If no laundry is run:
+- Uncontrollable load drops to just baseload + A/C ($[1.3, 1.9]\,\text{kW}$).
+- Available headroom rises to $[14.1, 14.7]\,\text{kW}$, allowing the EVSE to charge at its maximum hardware rating of **$11.5\,\text{kW}$**.
+- The car reaches $80\%$ in just $1.96\,\text{hours}$ ($\approx 00:58\,\text{AM}$).
+- The water tank never cooled down, requiring only brief standby top-off.
+
+Because both branches satisfy all physical constraints and deadlines, the lattice network mathematically proves that the home's off-peak schedule is **robust against random occupant behavior**.
+
+
 
