@@ -83,18 +83,33 @@ flowchart TD
 
 ---
 
-## 3. Hourly Time Series Simulation Overview
+## 3. Hourly Simulation Overview
 
-We simulate a 6-hour charging profile across the midday solar window (11:00 to 16:00):
+To illustrate the separation of inputs from autonomous network deductions, we divide the 6-hour simulation (11:00 to 16:00) into two views:
 
-| Hour | Solar Generation | Home Baseload | Solar Surplus | Active Target Channel<br/>*(prioritized vehicle to charge)* | Rivian Allocation & SOC | Tesla Allocation & SOC | Operational Event |
-| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| **11:00** | $[4.0, 4.5]\,\text{kW}$ | $[0.5, 0.7]\,\text{kW}$ | $[3.3, 4.0]\,\text{kW}$ | `"rivian"` | $[3.3, 4.0]\,\text{kW}$<br/>**SOC:** $[69.4\%, 70.0\%]$ | Standby ($[0.0, 7.6]\,\text{kW}$)<br/>**SOC:** $20.0\%$ | Morning solar ramp; Rivian prioritised (starts at $67.0\%$, target $75.0\%$). |
-| **12:00** | $[6.5, 7.5]\,\text{kW}$ | $[0.8, 1.0]\,\text{kW}$ | $[5.5, 6.7]\,\text{kW}$ | `"rivian"` | $[5.5, 6.7]\,\text{kW}$<br/>**SOC:** $[73.5\%, 74.9\%]$ | Standby ($[0.0, 7.6]\,\text{kW}$)<br/>**SOC:** $20.0\%$ | Solar peak; Rivian continues charging toward $75.0\%$ target. |
-| **13:00** | $[7.0, 7.5]\,\text{kW}$ | $[0.6, 0.8]\,\text{kW}$ | $[6.2, 6.9]\,\text{kW}$ | `"rivian"` | $[6.2, 6.9]\,\text{kW}$<br/>**SOC:** $[78.1\%, 80.0\%]$ | Standby ($[0.0, 7.6]\,\text{kW}$)<br/>**SOC:** $20.0\%$ | **Rivian reaches target ($\ge 75.0\%$)!** Battery is sufficiently charged. |
-| **14:00** | $[5.5, 6.0]\,\text{kW}$ | $[0.7, 0.9]\,\text{kW}$ | $[4.6, 5.3]\,\text{kW}$ | `"tesla"` | Standby ($[0.0, 11.5]\,\text{kW}$)<br/>**SOC:** $[78.1\%, 80.0\%]$ | $[4.6, 5.3]\,\text{kW}$<br/>**SOC:** $[26.1\%, 27.1\%]$ | **$\pi$-Handoff 1:** Switched to Tesla because Rivian is satisfied! TMS retracts Rivian. |
-| **15:00** | $[4.8, 5.4]\,\text{kW}$ | $[0.6, 0.8]\,\text{kW}$ | $[4.0, 4.8]\,\text{kW}$ | `"tesla"` | Standby ($[0.0, 11.5]\,\text{kW}$)<br/>**SOC:** $[78.1\%, 80.0\%]$ | $[4.0, 4.8]\,\text{kW}$<br/>**SOC:** $[31.5\%, 33.5\%]$ | **Tesla reaches target ($\ge 30.0\%$)!** Both primary vehicles now satisfied. |
-| **16:00** | $[3.5, 4.0]\,\text{kW}$ | $[0.5, 0.7]\,\text{kW}$ | $[2.8, 3.5]\,\text{kW}$ | `"guest_ev"` | Standby ($[0.0, 11.5]\,\text{kW}$)<br/>**SOC:** $[78.1\%, 80.0\%]$ | Standby ($[0.0, 7.6]\,\text{kW}$)<br/>**SOC:** $[31.5\%, 33.5\%]$ | **$\pi$-Handoff 2 & $(\nu y)$ Spawning:** Both household cars satisfied; power routes to Guest EV. |
+### A. Input Readings (Boundary Conditions)
+These are the external sensor readings and environmental boundary conditions provided to the system each hour. Notice that **no vehicle names or switching decisions are specified in the inputs**:
+
+| Hour | Solar Generation ($P_{\text{solar}}$) | Home Baseload ($P_{\text{base}}$) | Environmental Context |
+| :---: | :---: | :---: | :--- |
+| **11:00** | $[4.0, 4.5]\,\text{kW}$ | $[0.5, 0.7]\,\text{kW}$ | Morning solar ramp; clear skies |
+| **12:00** | $[6.5, 7.5]\,\text{kW}$ | $[0.8, 1.0]\,\text{kW}$ | Solar peak; cooking lunch increases baseload |
+| **13:00** | $[7.0, 7.5]\,\text{kW}$ | $[0.6, 0.8]\,\text{kW}$ | Early afternoon high solar window |
+| **14:00** | $[5.5, 6.0]\,\text{kW}$ | $[0.7, 0.9]\,\text{kW}$ | Afternoon solar begins tapering |
+| **15:00** | $[4.8, 5.4]\,\text{kW}$ | $[0.6, 0.8]\,\text{kW}$ | Late afternoon steady sun |
+| **16:00** | $[3.5, 4.0]\,\text{kW}$ | $[0.5, 0.7]\,\text{kW}$ | Late afternoon lower solar angle |
+
+### B. Network Deductions & Dynamic State Evolution (Outputs)
+These are the autonomous outputs computed by the propagator network—the surplus power envelope, the dynamically evaluated active target channel (selected car), the allocated charging power, and the resulting integrated State of Charge (SOC):
+
+| Hour | Solar Surplus ($P_{\text{surplus}}$) | Active Target Channel *(Active Car)* | Rivian Allocation & SOC *(Cap: $135\,\text{kWh}$, Target: $75\%$)* | Tesla Allocation & SOC *(Cap: $75\,\text{kWh}$, Target: $30\%$)* | Operational Event / $\pi$-Calculus Handoff |
+| :---: | :---: | :---: | :---: | :---: | :--- |
+| **11:00** | $[3.3, 4.0]\,\text{kW}$ | `"rivian"` | $[3.3, 4.0]\,\text{kW}$<br/>**SOC:** $[69.4\%, 70.0\%]$ | Standby ($[0.0, 7.6]\,\text{kW}$)<br/>**SOC:** $20.0\%$ | Rivian starts at $67.0\%$ and charges towards $75.0\%$ target. |
+| **12:00** | $[5.5, 6.7]\,\text{kW}$ | `"rivian"` | $[5.5, 6.7]\,\text{kW}$<br/>**SOC:** $[73.5\%, 74.9\%]$ | Standby ($[0.0, 7.6]\,\text{kW}$)<br/>**SOC:** $20.0\%$ | Rivian continues charging toward $75.0\%$ target. |
+| **13:00** | $[6.2, 6.9]\,\text{kW}$ | `"rivian"` | $[6.2, 6.9]\,\text{kW}$<br/>**SOC:** $[78.1\%, 80.0\%]$ | Standby ($[0.0, 7.6]\,\text{kW}$)<br/>**SOC:** $20.0\%$ | **Rivian reaches target ($\ge 75.0\%$)!** Battery is sufficiently charged. |
+| **14:00** | $[4.6, 5.3]\,\text{kW}$ | `"tesla"` | Standby ($[0.0, 11.5]\,\text{kW}$)<br/>**SOC:** $[78.1\%, 80.0\%]$ | $[4.6, 5.3]\,\text{kW}$<br/>**SOC:** $[26.1\%, 27.1\%]$ | **$\pi$-Handoff 1:** Switched to Tesla because Rivian is satisfied! TMS retracts Rivian. |
+| **15:00** | $[4.0, 4.8]\,\text{kW}$ | `"tesla"` | Standby ($[0.0, 11.5]\,\text{kW}$)<br/>**SOC:** $[78.1\%, 80.0\%]$ | $[4.0, 4.8]\,\text{kW}$<br/>**SOC:** $[31.5\%, 33.5\%]$ | **Tesla reaches target ($\ge 30.0\%$)!** Both primary vehicles are now satisfied. |
+| **16:00** | $[2.8, 3.5]\,\text{kW}$ | `"guest_ev"` | Standby ($[0.0, 11.5]\,\text{kW}$)<br/>**SOC:** $[78.1\%, 80.0\%]$ | Standby ($[0.0, 7.6]\,\text{kW}$)<br/>**SOC:** $[31.5\%, 33.5\%]$ | **$\pi$-Handoff 2 & $(\nu y)$ Spawning:** Both household cars satisfied; power routes to Guest EV. |
 
 ---
 
@@ -162,6 +177,7 @@ hourly_inputs = [
 ]
 
 RIVIAN_TARGET_SOC = 75.0  # Charge Rivian first until 75.0% target
+TESLA_TARGET_SOC = 30.0  # Then charge Tesla until 30.0% target
 TESLA_TARGET_SOC = 30.0  # Then charge Tesla until 30.0% target
 
 for hour, sol_val, base_val in hourly_inputs:
