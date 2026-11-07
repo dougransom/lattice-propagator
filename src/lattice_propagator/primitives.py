@@ -131,13 +131,17 @@ class Cell:
         if root.tms is None:
             from .tms import TruthMaintenanceSystem
 
+            ntms = getattr(root.network, "tms", None) if root.network else None
             root.tms = TruthMaintenanceSystem(
                 cell_id=root.cell_id,
                 default_prior=root._value,
                 unit=root.unit,
                 display_name=root.display_name,
                 network=root.network,
+                network_tms=ntms,
             )
+            if ntms is not None:
+                ntms.cell_tms[root.cell_id] = root.tms
         return root.tms
 
     def explain(
@@ -282,6 +286,30 @@ class Cell:
     def __rtruediv__(self, other: Any) -> Cell:
         return _build_binary_op(other, self, op="div")
 
+    def __and__(self, other: Any) -> Cell:
+        return _build_binary_op(self, other, op="and")
+
+    def __rand__(self, other: Any) -> Cell:
+        return _build_binary_op(other, self, op="and")
+
+    def __or__(self, other: Any) -> Cell:
+        return _build_binary_op(self, other, op="or")
+
+    def __ror__(self, other: Any) -> Cell:
+        return _build_binary_op(other, self, op="or")
+
+    def __xor__(self, other: Any) -> Cell:
+        return _build_binary_op(self, other, op="xor")
+
+    def __rxor__(self, other: Any) -> Cell:
+        return _build_binary_op(other, self, op="xor")
+
+    def __invert__(self) -> Cell:
+        return _build_unary_op(self, op="not")
+
+    def __pow__(self, other: Any) -> Cell:
+        return _build_binary_op(self, other, op="pow")
+
     def __repr__(self) -> str:
         root = self._find()
         if root is not self:
@@ -307,6 +335,8 @@ class Propagator(ABC):
         self.is_assumption = is_assumption
         for c in inputs:
             c.add_propagator(self)
+            if c.network is not None and self not in c.network.propagators:
+                c.network.add_propagator(self)
 
     def derive_provenance(
         self,
@@ -343,9 +373,9 @@ class Propagator(ABC):
                         min(p.confidence for p in active),
                     )
                     for p in active:
-                        if p.is_assumption:
+                        if p.is_assumption or p.support:
                             any_input_assumption = True
-                            upstream_support.update(p.support)
+                        upstream_support.update(p.support)
 
         src = source or self.name
         if self.is_assumption or force_assumption:
@@ -630,6 +660,11 @@ def _coerce_to_cell(val: Any, network: PropagatorNetwork, role: str) -> Cell:
         if val.cell_id not in network.cells:
             network.cells[val.cell_id] = val
         return val
+    if isinstance(val, bool):
+        cid = f"const_{val}"
+        if cid in network.cells:
+            return network.cells[cid]
+        return network.add_cell(cid, FlatValue(val))
     if isinstance(val, (int, float)):
         val_str = str(val).replace(".", "_").replace("-", "neg_")
         cid = f"const_{val_str}"
@@ -764,12 +799,41 @@ class MultiplierPropagator(Propagator):
                 self.emit(self.b, cand_b, antecedents=(self.c, self.a))
 
 
-_BINARY_OPS: Mapping[str, tuple[str, type[Propagator], bool]] = {
+_BINARY_OPS: dict[str, tuple[str, type[Propagator], bool]] = {
     "add": ("+", AdderPropagator, False),
     "sub": ("-", AdderPropagator, True),
     "mul": ("*", MultiplierPropagator, False),
     "div": ("/", MultiplierPropagator, True),
 }
+
+_UNARY_OPS: dict[str, tuple[str, type[Propagator]]] = {}
+
+
+def register_binary_op(
+    op: str, symbol: str, prop_cls: type[Propagator], inverted: bool = False
+) -> None:
+    """Register a custom binary operator for Cell dunder method dispatch."""
+    _BINARY_OPS[op] = (symbol, prop_cls, inverted)
+
+
+def register_unary_op(op: str, symbol: str, prop_cls: type[Propagator]) -> None:
+    """Register a custom unary operator for Cell dunder method dispatch."""
+    _UNARY_OPS[op] = (symbol, prop_cls)
+
+
+def _build_unary_op(operand: Cell, op: str) -> Cell:
+    """Build a unary operator cell using declarative dispatch."""
+    spec = _UNARY_OPS.get(op)
+    if spec is None:
+        supported = ", ".join(repr(k) for k in _UNARY_OPS)
+        raise ValueError(f"Unsupported unary operator {op!r}. Supported: {supported}")
+
+    symbol, prop_cls = spec
+    net = operand.network if operand.network is not None else PropagatorNetwork()
+    out = net.add_cell(f"({symbol}{operand.cell_id})")
+    p = prop_cls(f"{op}_{operand.cell_id}", operand, out)
+    net.add_propagator(p)
+    return out
 
 
 def _build_binary_op(left: Any, right: Any, op: str) -> Cell:
@@ -2063,14 +2127,16 @@ class PropagatorNetwork:
 
     def add_propagator(self, propagator: Propagator) -> None:
         """Register a propagator in this network."""
-        self.propagators.append(propagator)
+        if propagator not in self.propagators:
+            self.propagators.append(propagator)
         for c in propagator.inputs + propagator.outputs:
             if c.network is None:
                 c.network = self
             if c.cell_id not in self.cells:
                 self.cells[c.cell_id] = c
         # Trigger initial run
-        self._queue.append(propagator)
+        if propagator not in self._queue:
+            self._queue.append(propagator)
 
     def unify_cells(self, cell_a: Cell, cell_b: Cell) -> None:
         """Unify two cells into an equivalence class via Disjoint Set Union (Union-Find)."""

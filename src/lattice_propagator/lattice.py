@@ -751,7 +751,7 @@ def _merge_belief_masses(a: BeliefMassValue, b: BeliefMassValue) -> LatticeValue
     return a.combine(b)
 
 
-MERGE_DISPATCH: Mapping[type, Callable[[Any, Any], LatticeValue]] = {
+MERGE_DISPATCH: dict[type, Callable[[Any, Any], LatticeValue]] = {
     GaussianValue: _merge_gaussians,
     IntervalValue: _merge_intervals,
     CircularInterval: _merge_circular_intervals,
@@ -762,6 +762,11 @@ MERGE_DISPATCH: Mapping[type, Callable[[Any, Any], LatticeValue]] = {
     MapLattice: _merge_map_lattices,
     BeliefMassValue: _merge_belief_masses,
 }
+
+
+def register_merge_handler(val_type: type, handler: Callable[[Any, Any], LatticeValue]) -> None:
+    """Register a custom monotonic merge handler for a LatticeValue subtype."""
+    MERGE_DISPATCH[val_type] = handler
 
 
 def merge_lattice(a: LatticeValue, b: LatticeValue) -> LatticeValue:

@@ -781,6 +781,8 @@ class NetworkTMS:
 
     def __init__(self, network: Any = None) -> None:
         self.network = network
+        if network is not None:
+            network.tms = self
         self.cell_tms: dict[str, TruthMaintenanceSystem] = {}
         self.nogoods: list[frozenset[str]] = []
         self.assumptions: dict[str, Premise] = {}
