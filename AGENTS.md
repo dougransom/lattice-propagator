@@ -7,7 +7,7 @@ Architecture map, operational rules, and synchronization guardrails for AI codin
 ## 1. Architecture Map
 
 - **`src/lattice_propagator/lattice.py`**: Join-semilattices of partial information (`Bottom`, `FlatValue`, `GaussianValue`, `IntervalValue`, `DiscreteDomain`, `SetLattice`, `MapLattice`, `Contradiction`, `merge_lattice`).
-- **`src/lattice_propagator/primitives.py`**: Reactive `Cell` containers, unification via Union-Find (`cell.unify`), `Propagator` primitives (`Adder`, `Multiplier`, `KalmanEstimator`, `AllDifferent`), and the `PropagatorNetwork` worklist fixed-point engine.
+- **`src/lattice_propagator/primitives.py`**: Reactive `Cell` containers, unification via Union-Find (`cell.unify`), $\pi$-calculus link mobility (`MobileLinkPropagator`), `Propagator` primitives (`Adder`, `Multiplier`, `KalmanEstimator`, `AllDifferent`), and the `PropagatorNetwork` worklist fixed-point engine.
 - **`src/lattice_propagator/tms.py`**: Truth Maintenance System (`Premise`, defeasible `Assumption`, `Justification`, `TruthMaintenanceSystem`, `NetworkTMS` dependency-directed backtracking).
 - **`docs/`**: MkDocs documentation website (guides, examples, and `mkdocstrings` API references).
 - **`scripts/dev.sh` / `src/lattice_propagator/dev_cli.py`**: Unified developer CLI (`lattice-dev`).

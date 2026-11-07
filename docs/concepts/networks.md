@@ -27,14 +27,88 @@ print(temp_cell.value)  # Flat(21.5)
 
 In complex constraint networks, intermediate computations may produce two cells that are discovered to refer to the exact same physical quantity. 
 
-`Cell.unify()` binds two cells together using a Disjoint Set Union (DSU / Union-Find) algorithm:
-- Their values are merged.
+`Cell.unify()` permanently binds two cells together using a Disjoint Set Union (DSU / Union-Find) algorithm:
+- Their values are merged ($v_a \sqcup v_b$).
 - Their neighbor propagator lists are unified.
 - Subsequent updates to either cell notify all connected propagators across both original cells.
 
 ---
 
-## 2. Propagators
+## 2. Static vs. Dynamic Network Topology ($\pi$-Calculus Mobility)
+
+Classical dataflow and propagator networks have a **static graph topology**: wires are fixed before execution begins. However, real-world systems often require **dynamic topology** where connections between cells change at runtime.
+
+`lattice-propagator` provides three distinct topological mechanisms depending on whether a connection is permanent, gated, or mobile:
+
+| Mechanism | Primitive | Semantics | Retracts on Change? |
+| :--- | :--- | :--- | :---: |
+| **Permanent Equivalence** | `cell_a.unify(cell_b)` | Merges two cells into a single equivalence class forever (Union-Find) | No (monotonic union) |
+| **Static Gated Wire** | `SwitchPropagator` | Forwards `input` to a fixed `output` when `control == on_value` | No |
+| **$\pi$-Calculus Mobile Link** | `MobileLinkPropagator` | Reads target channel name(s) $y$ from `channel_cell` and routes `payload_cell` to $y$ ($c?(y).\, y!\langle v \rangle$) | **Yes** (via `retract_source` when channel moves) |
+
+### How `MobileLinkPropagator` Preserves Semilattice Discipline
+
+In Robin Milner's **$\pi$-calculus**, processes reconfigure their communication graph by sending **channel names** over channels ($c?(y).\, y!\langle v \rangle$) and spawning fresh private channels via the **restriction operator** ($(\nu y)$).
+
+`MobileLinkPropagator` embeds $\pi$-calculus link mobility directly into partial-information lattices:
+
+1. **Channel Names as Lattice Values:**
+   `channel_cell` can hold a single target name (`FlatValue("node_b")`), a multi-target set (`SetLattice({"node_a", "node_b"})`), or an uncertain candidate set (`DiscreteDomain`, `OrderedInterval`, or `BeliefMassValue`).
+2. **TMS-Backed Link Handoff:**
+   Instead of destructively overwriting a target cell, `MobileLinkPropagator` asserts `payload_cell.value` into each active target cell's `TruthMaintenanceSystem` under a link-specific source ID. When `channel_cell` moves to a new target (or resets to `Bottom` $\bot$), the propagator calls `target.retract_source(...)` on the vacated target, allowing it to relax cleanly back to its remaining active premises.
+3. **Uncertainty-Aware Superposition (`propagate_ambiguous=True`):**
+   When `channel_cell` holds multiple unresolved candidates (e.g. `DiscreteDomain({"node_a", "node_b"})`), setting `propagate_ambiguous=True` projects speculative `Assumption` premises (`is_assumption=True`) with scaled confidence across all candidate targets—allowing `NetworkTMS` to automatically retract any branch that causes a downstream `Contradiction` ($\top$).
+4. **Dynamic $(\nu y)$ Cell Creation (`spawn_missing=True`):**
+   If `channel_cell` resolves to a channel name not yet present in the network, `spawn_missing=True` dynamically allocates the new `Cell` on demand.
+
+```python
+from lattice_propagator import (
+    DiscreteDomain,
+    IntervalValue,
+    MobileLinkPropagator,
+    PropagatorNetwork,
+)
+
+net = PropagatorNetwork("PiMobilityDemo")
+
+# Two target nodes with baseline operating envelopes [0.0, 100.0]
+node_a = net.add_cell("node_a", IntervalValue(0.0, 100.0))
+node_b = net.add_cell("node_b", IntervalValue(0.0, 100.0))
+
+# Mobile payload [20.0, 30.0] and a channel cell holding the active destination name
+payload = net.add_cell("payload", IntervalValue(20.0, 30.0))
+route_channel = net.add_cell("route_channel")
+
+net.add_propagator(
+    MobileLinkPropagator(
+        "mobile_link",
+        channel_cell=route_channel,
+        payload_cell=payload,
+        targets={"a": node_a, "b": node_b},
+    )
+)
+
+# 1. Bind channel to "a" → node_a refines to [0, 100] ⊔ [20, 30] = [20, 30]
+route_channel.set_value(DiscreteDomain.single("a"), overwrite=True)
+net.run()
+print(f"node_a: {node_a.value}, node_b: {node_b.value}")
+assert node_a.value == IntervalValue(20.0, 30.0)
+assert node_b.value == IntervalValue(0.0, 100.0)
+
+# 2. Move channel to "b" → node_a automatically relaxes to [0, 100], node_b refines to [20, 30]
+route_channel.set_value(DiscreteDomain.single("b"), overwrite=True)
+net.run()
+print(f"node_a: {node_a.value}, node_b: {node_b.value}")
+assert node_a.value == IntervalValue(0.0, 100.0)
+assert node_b.value == IntervalValue(20.0, 30.0)
+```
+
+!!! info "Deep Dive: Event Buses, Node-RED, $\pi$-Calculus & Propagators"
+    For a full architectural comparison of $\pi$-calculus link mobility (including Microsoft BizTalk XLANG, Kahn Process Networks, and smart-building zone handoff), see [Event Buses, Node-RED, $\pi$-Calculus & Propagators](../building_automation/paradigms_and_pi_calculus.md).
+
+---
+
+## 3. Propagators
 
 A `Propagator` is an autonomous computational unit. It:
 1. Observes a set of input cells.
@@ -62,7 +136,7 @@ A `Propagator` is an autonomous computational unit. It:
 
 ---
 
-## 3. The `PropagatorNetwork` Worklist Engine
+## 4. The `PropagatorNetwork` Worklist Engine
 
 The `PropagatorNetwork` manages an asynchronous worklist:
 

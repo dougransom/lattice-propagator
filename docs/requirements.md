@@ -103,6 +103,7 @@ title: Cell Architecture & Reactive Unification
 - **REQ-CELL-1 (Cell Storage & Monotonic Assignment):** A `Cell` must hold an immutable lattice value. Calling `cell.set_value(val)` must compute `new_val = old_val ⊔ val`. If `new_val == old_val`, mutation is suppressed.
 - **REQ-CELL-2 (Subscriber Wakeup):** When a cell's value monotonically refines, all attached observer propagators must be scheduled in the network worklist.
 - **REQ-CELL-3 (Equivalence Unification via Union-Find):** The system shall support `cell_a.unify(cell_b)`, merging two cells into a single equivalence class using disjoint-set Union-Find with path compression. Any value in `cell_a` and `cell_b` must immediately join, and all future updates must propagate to all unified references.
+- **REQ-CELL-4 (Source-Scoped Premise Retraction):** `Cell.retract_source(source, reason)` must retract a named premise from the cell's internal `TruthMaintenanceSystem`, recompute the fused lattice value across all remaining active premises, and schedule connected propagators when the cell's value changes.
 
 ---
 
@@ -130,6 +131,9 @@ title: Propagator Primitives & Fixed-Point Scheduling
 - **REQ-PROP-7 (Temporal Trajectory Envelopes & Curve Generation):**
   - `TrajectoryEnvelopePropagator` must evaluate continuous Signal Temporal Logic (STL) interval envelopes $[y_{\min}(t), y_{\max}(t)]$ over piecewise `TrajectorySegment` schedules parameterized by elapsed time $\Delta t$.
   - The propagator must support normalized easing transitions (`linear`, `smoothstep`, `sigmoid`, `tanh`, `exponential`) as well as user-supplied mathematical callbacks (`custom_eval`), and optional additive dynamic reference offset cells.
+- **REQ-PROP-8 ($\pi$-Calculus Link Mobility & Dynamic Session Spawning):**
+  - `MobileLinkPropagator` must implement Milner's $\pi$-calculus link mobility ($c?(y).\, y!\langle v \rangle$) by routing `payload_cell` values to target cells named in `channel_cell` (`FlatValue`, `DiscreteDomain`, `OrderedInterval`, `SetLattice`, or `BeliefMassValue`) and automatically retracting premises from vacated targets via `Cell.retract_source`.
+  - When `propagate_ambiguous=True`, unresolved multi-candidate channels must project defeasible `Assumption` premises with scaled confidence across candidate targets; when `spawn_missing=True`, unknown channel names must dynamically allocate new cells in the network ($(\nu y)$ restriction).
 
 
 ---
@@ -142,11 +146,11 @@ id: REQ-TMS
 title: Truth Maintenance & Search Paradigms
 ```
 
-- **REQ-TMS-1 (Causal Provenance Tracking):** Every non-bottom value asserted into a cell must record its causal justification (rule name, antecedent cells, premise/assumption dependencies, and timestamp).
+- **REQ-TMS-1 (Causal Provenance & Transitive Support Tracking):** Every non-bottom value asserted into a cell must record its causal justification (rule name, antecedent cells, premise/assumption dependencies, and timestamp). The base `Propagator.emit()` method must automatically propagate upstream assumption `support` sets and weakest-link confidence ($\text{confidence} \times \min_i \text{conf}_i$) to downstream cells.
 - **REQ-TMS-2 (Human-Readable Explanations):** The system shall provide `cell.explain()` generating structured explanation trees and human-readable causal sentences for end-user inspection.
 - **REQ-TMS-3 (Dependency-Directed Backtracking - DDB):**
   - `NetworkTMS` must support defeasible assumptions alongside ground premises.
-  - When a contradiction occurs, the system must trace the dependency graph, identify the conflicting assumption set (nogood), record the nogood to prevent re-exploration, and retract the minimum-confidence assumption.
+  - When a contradiction occurs, the system must trace the dependency graph (including transitive `support` sets across multi-hop propagator deductions), identify the conflicting assumption set (nogood), record the nogood to prevent re-exploration, and retract the minimum-confidence assumption.
 - **REQ-TMS-4 (Chronological Search Choice Engine):**
   - `ChoiceEngine` must support chronological exploration with state restoration and Minimum Remaining Values (MRV) variable ordering heuristics.
 
