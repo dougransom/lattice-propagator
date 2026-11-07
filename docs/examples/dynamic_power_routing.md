@@ -12,7 +12,7 @@ This example demonstrates how [`MobileLinkPropagator`](file:///home/doug/code/la
 
 A home has a solar photovoltaic (PV) array, varying household baseload, and a shared $40\,\text{A}$ ($9.6\,\text{kW}$ continuous @ $240\,\text{V}$) electrical feed in the garage. Two Electric Vehicles (EVs) are parked in the driveway:
 
-1. **Rivian R1S:** High battery capacity ($135.0\,\text{kWh}$ pack), accepts up to $11.5\,\text{kW}$ on AC Level 2. Starts at **$67.0\%$ State of Charge (SOC)** ($90.45\,\text{kWh}$ stored), with an afternoon trip target threshold of $\sim 74\%$.
+1. **Rivian R1S:** High battery capacity ($135.0\,\text{kWh}$ pack), accepts up to $11.5\,\text{kW}$ on AC Level 2. Starts at **$67.0\%$ State of Charge (SOC)** ($90.45\,\text{kWh}$ stored), with a sufficient charge target threshold of **$75.0\%$ SOC**.
 2. **Tesla Model Y:** Secondary commuter vehicle ($75.0\,\text{kWh}$ pack), accepts up to $7.6\,\text{kW}$ on AC Level 2. Starts depleted at **$20.0\%$ SOC** ($15.00\,\text{kWh}$ stored).
 
 ### Why Static Graphs Struggle
@@ -84,15 +84,16 @@ flowchart TD
 
 ## 3. Hourly Time Series Simulation Overview
 
-We simulate a 5-hour charging profile across the midday solar window:
+We simulate a 6-hour charging profile across the midday solar window (11:00 to 16:00):
 
-| Hour | Solar Generation | Home Baseload | Solar Surplus | Active Channel | Rivian Allocation & SOC | Tesla Allocation & SOC | Operational Event |
+| Hour | Solar Generation | Home Baseload | Solar Surplus | Active Target Channel<br/>*(prioritized vehicle to charge)* | Rivian Allocation & SOC | Tesla Allocation & SOC | Operational Event |
 | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
 | **11:00** | $[3.5, 4.0]\,\text{kW}$ | $[0.5, 0.8]\,\text{kW}$ | $[2.7, 3.5]\,\text{kW}$ | `"rivian"` | $[2.7, 3.5]\,\text{kW}$<br/>**SOC:** $[69.0\%, 69.6\%]$ | Standby ($[0.0, 7.6]\,\text{kW}$)<br/>**SOC:** $20.0\%$ | Morning solar ramp; Rivian prioritised (starts at $67.0\%$). |
-| **12:00** | $[6.0, 7.5]\,\text{kW}$ | $[1.0, 1.2]\,\text{kW}$ | $[4.8, 6.5]\,\text{kW}$ | `"rivian"` | $[4.8, 6.5]\,\text{kW}$<br/>**SOC:** $[72.6\%, 74.4\%]$ | Standby ($[0.0, 7.6]\,\text{kW}$)<br/>**SOC:** $20.0\%$ | Solar peak; Rivian reaches afternoon errand target ($\sim 74\%$). |
-| **13:00** | $[6.8, 7.2]\,\text{kW}$ | $[0.6, 0.8]\,\text{kW}$ | $[6.0, 6.6]\,\text{kW}$ | `"tesla"` | Standby ($[0.0, 11.5]\,\text{kW}$)<br/>**SOC:** $[72.6\%, 74.4\%]$ | $[6.0, 6.6]\,\text{kW}$<br/>**SOC:** $[28.0\%, 28.8\%]$ | **$\pi$-Handoff:** Rivian reached target; TMS retracts Rivian, engages Tesla. |
-| **14:00** | $[5.0, 5.5]\,\text{kW}$ | $[0.8, 1.0]\,\text{kW}$ | $[4.0, 4.7]\,\text{kW}$ | `"tesla"` | Standby ($[0.0, 11.5]\,\text{kW}$)<br/>**SOC:** $[72.6\%, 74.4\%]$ | $[4.0, 4.7]\,\text{kW}$<br/>**SOC:** $[33.3\%, 35.1\%]$ | Solar tapers; Tesla absorbs remaining surplus. |
-| **15:00** | $[4.2, 4.8]\,\text{kW}$ | $[0.7, 0.9]\,\text{kW}$ | $[3.3, 4.1]\,\text{kW}$ | `"guest_ev"` | Standby ($[0.0, 11.5]\,\text{kW}$)<br/>**SOC:** $[72.6\%, 74.4\%]$ | Standby ($[0.0, 7.6]\,\text{kW}$)<br/>**SOC:** $[33.3\%, 35.1\%]$ | **$(\nu y)$ Spawning:** Guest plugs in; network allocates cell on demand. |
+| **12:00** | $[6.0, 7.5]\,\text{kW}$ | $[1.0, 1.2]\,\text{kW}$ | $[4.8, 6.5]\,\text{kW}$ | `"rivian"` | $[4.8, 6.5]\,\text{kW}$<br/>**SOC:** $[72.6\%, 74.4\%]$ | Standby ($[0.0, 7.6]\,\text{kW}$)<br/>**SOC:** $20.0\%$ | Solar peak; cooking lunch increases baseload. |
+| **13:00** | $[6.8, 7.2]\,\text{kW}$ | $[0.6, 0.8]\,\text{kW}$ | $[6.0, 6.6]\,\text{kW}$ | `"rivian"` | $[6.0, 6.6]\,\text{kW}$<br/>**SOC:** $[77.0\%, 79.3\%]$ | Standby ($[0.0, 7.6]\,\text{kW}$)<br/>**SOC:** $20.0\%$ | Rivian crosses $75.0\%$ target ($[77.0\%, 79.3\%]$)! **Sufficiently charged**. |
+| **14:00** | $[5.0, 5.5]\,\text{kW}$ | $[0.8, 1.0]\,\text{kW}$ | $[4.0, 4.7]\,\text{kW}$ | `"tesla"` | Standby ($[0.0, 11.5]\,\text{kW}$)<br/>**SOC:** $[77.0\%, 79.3\%]$ | $[4.0, 4.7]\,\text{kW}$<br/>**SOC:** $[25.3\%, 26.3\%]$ | **$\pi$-Handoff:** Switched to Tesla because Rivian is satisfied! TMS retracts Rivian. |
+| **15:00** | $[4.2, 4.8]\,\text{kW}$ | $[0.7, 0.9]\,\text{kW}$ | $[3.3, 4.1]\,\text{kW}$ | `"tesla"` | Standby ($[0.0, 11.5]\,\text{kW}$)<br/>**SOC:** $[77.0\%, 79.3\%]$ | $[3.3, 4.1]\,\text{kW}$<br/>**SOC:** $[29.7\%, 31.7\%]$ | Tesla continues charging from tapering solar surplus. |
+| **16:00** | $[3.0, 3.6]\,\text{kW}$ | $[0.6, 0.8]\,\text{kW}$ | $[2.2, 3.0]\,\text{kW}$ | `"guest_ev"` | Standby ($[0.0, 11.5]\,\text{kW}$)<br/>**SOC:** $[77.0\%, 79.3\%]$ | Standby ($[0.0, 7.6]\,\text{kW}$)<br/>**SOC:** $[29.7\%, 31.7\%]$ | **$(\nu y)$ Spawning:** Guest plugs in; network dynamically allocates cell. |
 
 ---
 
@@ -145,35 +146,50 @@ net.add_propagator(
 )
 
 # 5. Hourly time series simulation inputs.
-# Each tuple defines the external boundary conditions and routing control for that hour:
-#   • Column 1 (hour):       Time-of-day step identifier (e.g. "11:00")
-#   • Column 2 (sol_val):    Solar PV generation power envelope [P_min, P_max] in kW
-#   • Column 3 (base_val):   Home baseload power consumption envelope [B_min, B_max] in kW
-#   • Column 4 (vehicle_id): Active target channel name to route surplus to ("rivian", "tesla", "guest_ev")
-hourly_readings = [
-    #  Hour     Solar Generation (kW)   Home Baseload (kW)      Active Target Channel
-    ("11:00", IntervalValue(3.5, 4.0), IntervalValue(0.5, 0.8), "rivian"),
-    ("12:00", IntervalValue(6.0, 7.5), IntervalValue(1.0, 1.2), "rivian"),
-    ("13:00", IntervalValue(6.8, 7.2), IntervalValue(0.6, 0.8), "tesla"),
-    ("14:00", IntervalValue(5.0, 5.5), IntervalValue(0.8, 1.0), "tesla"),
-    ("15:00", IntervalValue(4.2, 4.8), IntervalValue(0.7, 0.9), "guest_ev"),
+# External boundary conditions and plug-in events:
+#   • Column 1 (hour):        Time-of-day step identifier (e.g. "11:00")
+#   • Column 2 (sol_val):     Solar PV generation power envelope [P_min, P_max] in kW
+#   • Column 3 (base_val):    Home baseload power consumption envelope [B_min, B_max] in kW
+#   • Column 4 (guest_event): External override when a guest plugs in (None or "guest_ev")
+hourly_inputs = [
+    #  Hour     Solar Generation (kW)   Home Baseload (kW)      Guest Event
+    ("11:00", IntervalValue(3.5, 4.0), IntervalValue(0.5, 0.8), None),
+    ("12:00", IntervalValue(6.0, 7.5), IntervalValue(1.0, 1.2), None),
+    ("13:00", IntervalValue(6.8, 7.2), IntervalValue(0.6, 0.8), None),
+    ("14:00", IntervalValue(5.0, 5.5), IntervalValue(0.8, 1.0), None),
+    ("15:00", IntervalValue(4.2, 4.8), IntervalValue(0.7, 0.9), None),
+    ("16:00", IntervalValue(3.0, 3.6), IntervalValue(0.6, 0.8), "guest_ev"),
 ]
 
-for hour, sol_val, base_val, vehicle_id in hourly_readings:
+RIVIAN_TARGET_SOC = 75.0  # Charge Rivian first until 75.0% target
+
+for hour, sol_val, base_val, guest_event in hourly_inputs:
     # Clear intermediate surplus cell for the new discrete time step
     surplus.set_value(BOTTOM, overwrite=True)
     solar.set_value(sol_val, overwrite=True)
     baseload.set_value(base_val, overwrite=True)
-    channel.set_value(DiscreteDomain.single(vehicle_id), overwrite=True)
+
+    # Determine Active Target Channel (prioritized vehicle to charge):
+    # Switch to Tesla not because of an arbitrary priority change, but because
+    # the Rivian has reached sufficient charge (>= 75.0% SOC)!
+    curr_soc_r = e_rivian.min_val / CAP_RIVIAN * 100.0
+    if guest_event:
+        target_car = guest_event
+    elif curr_soc_r < RIVIAN_TARGET_SOC:
+        target_car = "rivian"
+    else:
+        target_car = "tesla"
+
+    channel.set_value(DiscreteDomain.single(target_car), overwrite=True)
     net.run()
 
     # Integrate 1 hour of energy: Delta_E = Power * 1.0h
-    if vehicle_id == "rivian":
+    if target_car == "rivian":
         e_rivian = IntervalValue(
             e_rivian.min_val + rivian.value.min_val,
             e_rivian.max_val + rivian.value.max_val,
         )
-    elif vehicle_id == "tesla":
+    elif target_car == "tesla":
         e_tesla = IntervalValue(
             e_tesla.min_val + tesla.value.min_val,
             e_tesla.max_val + tesla.value.max_val,
@@ -190,20 +206,20 @@ for hour, sol_val, base_val, vehicle_id in hourly_readings:
     )
 
     # Verify expected dynamic routing and automatic TMS relaxation
-    if vehicle_id == "rivian":
+    if target_car == "rivian":
         assert rivian.value == surplus.value
         assert tesla.value == IntervalValue(0.0, 7.6)  # Tesla is in standby
-    elif vehicle_id == "tesla":
+    elif target_car == "tesla":
         assert rivian.value == IntervalValue(0.0, 11.5)  # Rivian relaxed back to standby
         assert tesla.value == surplus.value
-    elif vehicle_id == "guest_ev":
+    elif target_car == "guest_ev":
         assert rivian.value == IntervalValue(0.0, 11.5)
         assert tesla.value == IntervalValue(0.0, 7.6)
         assert "guest_ev" in net.cells
         assert net.cells["guest_ev"].value == surplus.value
 
     print(
-        f"Hour {hour} | Target: {vehicle_id:10} | Surplus: {surplus.value} | "
+        f"Hour {hour} | Target: {target_car:10} | Surplus: {surplus.value} | "
         f"Rivian SOC: [{soc_r.min_val:.1f}%, {soc_r.max_val:.1f}%] | "
         f"Tesla SOC: [{soc_t.min_val:.1f}%, {soc_t.max_val:.1f}%]"
     )
@@ -212,9 +228,10 @@ for hour, sol_val, base_val, vehicle_id in hourly_readings:
 ```text
 Hour 11:00 | Target: rivian     | Surplus: [2.700, 3.500] | Rivian SOC: [69.0%, 69.6%] | Tesla SOC: [20.0%, 20.0%]
 Hour 12:00 | Target: rivian     | Surplus: [4.800, 6.500] | Rivian SOC: [72.6%, 74.4%] | Tesla SOC: [20.0%, 20.0%]
-Hour 13:00 | Target: tesla      | Surplus: [6.000, 6.600] | Rivian SOC: [72.6%, 74.4%] | Tesla SOC: [28.0%, 28.8%]
-Hour 14:00 | Target: tesla      | Surplus: [4.000, 4.700] | Rivian SOC: [72.6%, 74.4%] | Tesla SOC: [33.3%, 35.1%]
-Hour 15:00 | Target: guest_ev   | Surplus: [3.300, 4.100] | Rivian SOC: [72.6%, 74.4%] | Tesla SOC: [33.3%, 35.1%]
+Hour 13:00 | Target: rivian     | Surplus: [6.000, 6.600] | Rivian SOC: [77.0%, 79.3%] | Tesla SOC: [20.0%, 20.0%]
+Hour 14:00 | Target: tesla      | Surplus: [4.000, 4.700] | Rivian SOC: [77.0%, 79.3%] | Tesla SOC: [25.3%, 26.3%]
+Hour 15:00 | Target: tesla      | Surplus: [3.300, 4.100] | Rivian SOC: [77.0%, 79.3%] | Tesla SOC: [29.7%, 31.7%]
+Hour 16:00 | Target: guest_ev   | Surplus: [2.200, 3.000] | Rivian SOC: [77.0%, 79.3%] | Tesla SOC: [29.7%, 31.7%]
 ```
 
 ---

@@ -214,41 +214,53 @@ def test_dynamic_ev_power_routing_hourly_simulation() -> None:
         )
     )
 
+    rivian_target_soc = 75.0  # Charge Rivian first until 75.0% target
+
     # Hourly time series simulation inputs:
-    # Column 1 (hour):       Time-of-day step identifier
-    # Column 2 (sol_val):    Solar PV generation power envelope [P_min, P_max] in kW
-    # Column 3 (base_val):   Home baseload power consumption envelope [B_min, B_max] in kW
-    # Column 4 (vehicle_id): Active target channel name to route surplus to ("rivian", "tesla", "guest_ev")
-    hourly_readings = [
-        ("11:00", IntervalValue(3.5, 4.0), IntervalValue(0.5, 0.8), "rivian"),
-        ("12:00", IntervalValue(6.0, 7.5), IntervalValue(1.0, 1.2), "rivian"),
-        ("13:00", IntervalValue(6.8, 7.2), IntervalValue(0.6, 0.8), "tesla"),
-        ("14:00", IntervalValue(5.0, 5.5), IntervalValue(0.8, 1.0), "tesla"),
-        ("15:00", IntervalValue(4.2, 4.8), IntervalValue(0.7, 0.9), "guest_ev"),
+    # Column 1 (hour):        Time-of-day step identifier
+    # Column 2 (sol_val):     Solar PV generation power envelope [P_min, P_max] in kW
+    # Column 3 (base_val):    Home baseload power consumption envelope [B_min, B_max] in kW
+    # Column 4 (guest_event): External override when a guest plugs in (None or "guest_ev")
+    hourly_inputs = [
+        ("11:00", IntervalValue(3.5, 4.0), IntervalValue(0.5, 0.8), None),
+        ("12:00", IntervalValue(6.0, 7.5), IntervalValue(1.0, 1.2), None),
+        ("13:00", IntervalValue(6.8, 7.2), IntervalValue(0.6, 0.8), None),
+        ("14:00", IntervalValue(5.0, 5.5), IntervalValue(0.8, 1.0), None),
+        ("15:00", IntervalValue(4.2, 4.8), IntervalValue(0.7, 0.9), None),
+        ("16:00", IntervalValue(3.0, 3.6), IntervalValue(0.6, 0.8), "guest_ev"),
     ]
 
-    for _hour, sol_val, base_val, vehicle_id in hourly_readings:
+    for _hour, sol_val, base_val, guest_event in hourly_inputs:
         surplus.set_value(BOTTOM, overwrite=True)
         solar.set_value(sol_val, overwrite=True)
         baseload.set_value(base_val, overwrite=True)
-        channel.set_value(DiscreteDomain.single(vehicle_id), overwrite=True)
+
+        curr_soc_r = e_rivian.min_val / cap_rivian * 100.0
+        if guest_event:
+            target_car = guest_event
+        elif curr_soc_r < rivian_target_soc:
+            target_car = "rivian"
+        else:
+            target_car = "tesla"
+
+        channel.set_value(DiscreteDomain.single(target_car), overwrite=True)
         net.run()
 
-        if vehicle_id == "rivian":
+        if target_car == "rivian":
             assert rivian.value == surplus.value
             assert tesla.value == IntervalValue(0.0, 7.6)
             e_rivian = IntervalValue(
                 e_rivian.min_val + rivian.value.min_val,
                 e_rivian.max_val + rivian.value.max_val,
             )
-        elif vehicle_id == "tesla":
+        elif target_car == "tesla":
             assert rivian.value == IntervalValue(0.0, 11.5)
             assert tesla.value == surplus.value
             e_tesla = IntervalValue(
                 e_tesla.min_val + tesla.value.min_val,
                 e_tesla.max_val + tesla.value.max_val,
             )
-        elif vehicle_id == "guest_ev":
+        elif target_car == "guest_ev":
             assert rivian.value == IntervalValue(0.0, 11.5)
             assert tesla.value == IntervalValue(0.0, 7.6)
             assert "guest_ev" in net.cells
@@ -263,7 +275,7 @@ def test_dynamic_ev_power_routing_hourly_simulation() -> None:
         e_tesla.min_val / cap_tesla * 100.0,
         e_tesla.max_val / cap_tesla * 100.0,
     )
-    assert 72.5 <= soc_r_final.min_val <= 73.0
-    assert 74.0 <= soc_r_final.max_val <= 74.5
-    assert 33.0 <= soc_t_final.min_val <= 33.5
-    assert 35.0 <= soc_t_final.max_val <= 35.5
+    assert 76.5 <= soc_r_final.min_val <= 77.5
+    assert 79.0 <= soc_r_final.max_val <= 79.5
+    assert 29.5 <= soc_t_final.min_val <= 30.0
+    assert 31.5 <= soc_t_final.max_val <= 32.0
