@@ -207,6 +207,11 @@ def test_dynamic_ev_power_routing_hourly_simulation() -> None:
         )
     )
 
+    # Hourly time series simulation inputs:
+    # Column 1 (hour):       Time-of-day step identifier
+    # Column 2 (sol_val):    Solar PV generation power envelope [P_min, P_max] in kW
+    # Column 3 (base_val):   Home baseload power consumption envelope [B_min, B_max] in kW
+    # Column 4 (vehicle_id): Active target channel name to route surplus to ("rivian", "tesla", "guest_ev")
     hourly_readings = [
         ("11:00", IntervalValue(3.5, 4.0), IntervalValue(0.5, 0.8), "rivian"),
         ("12:00", IntervalValue(6.0, 7.5), IntervalValue(1.0, 1.2), "rivian"),

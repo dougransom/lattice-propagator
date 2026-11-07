@@ -137,8 +137,14 @@ net.add_propagator(
     )
 )
 
-# 5. Hourly time series simulation readings
+# 5. Hourly time series simulation inputs.
+# Each tuple defines the external boundary conditions and routing control for that hour:
+#   • Column 1 (hour):       Time-of-day step identifier (e.g. "11:00")
+#   • Column 2 (sol_val):    Solar PV generation power envelope [P_min, P_max] in kW
+#   • Column 3 (base_val):   Home baseload power consumption envelope [B_min, B_max] in kW
+#   • Column 4 (vehicle_id): Active target channel name to route surplus to ("rivian", "tesla", "guest_ev")
 hourly_readings = [
+    #  Hour     Solar Generation (kW)   Home Baseload (kW)      Active Target Channel
     ("11:00", IntervalValue(3.5, 4.0), IntervalValue(0.5, 0.8), "rivian"),
     ("12:00", IntervalValue(6.0, 7.5), IntervalValue(1.0, 1.2), "rivian"),
     ("13:00", IntervalValue(6.8, 7.2), IntervalValue(0.6, 0.8), "tesla"),
@@ -247,3 +253,4 @@ If a downstream breaker limit or vehicle battery fault triggers a contradiction 
 1. **Monotonicity with Scoped Retraction:** Information fusion within each active cell remains monotonic ($\sqcup$). When topological links move, non-monotonic belief revision is localized strictly to the source premise via the cell's `TruthMaintenanceSystem`.
 2. **First-Class Channels:** Communication endpoints are ordinary lattice values (`FlatValue`, `DiscreteDomain`, `SetLattice`, `OrderedInterval`, or `BeliefMassValue`), enabling reasoning about routing paths using the same algebra as sensor data.
 3. **No Dangling Wires:** Vacating a target automatically removes the asserted constraint, eliminating memory leaks and stale command states.
+
