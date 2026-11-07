@@ -38,6 +38,9 @@ In complex constraint networks, intermediate computations may produce two cells 
 
 Classical dataflow and propagator networks have a **static graph topology**: wires are fixed before execution begins. However, real-world systems often require **dynamic topology** where connections between cells change at runtime.
 
+> [!NOTE] In-Depth Architectural Analysis
+> For an in-depth discussion on whether $\pi$-calculus link mobility is beneficial or added complexity, and how it resolves the monotonicity dilemma, see [Dynamic Topology & π-Calculus: Architectural Trade-Offs](dynamic_topology.md).
+
 `lattice-propagator` provides three distinct topological mechanisms depending on whether a connection is permanent, gated, or mobile:
 
 | Mechanism | Primitive | Semantics | Retracts on Change? |

@@ -30,6 +30,9 @@ With [`MobileLinkPropagator`](file:///home/doug/code/lattice-propagator/docs/api
 - **Automatic TMS Retraction:** When the channel moves from `"rivian"` to `"tesla"`, the propagator automatically calls `Cell.retract_source()` on the Rivian cell. The Rivian relaxes cleanly back to its unconstrained standby baseline $[0.0, 11.5]\,\text{kW}$, while the Tesla instantly refines to the new solar budget!
 - **Dynamic Scope Extrusion ($(\nu y)$):** When a guest vehicle plugs in (`"guest_ev"`), setting `spawn_missing=True` dynamically allocates a brand-new cell in the network on the fly.
 
+> [!NOTE] Architectural Trade-Offs
+> For an in-depth analysis of why $\pi$-calculus mobility is necessary in monotonic join-semilattices and when static switches are sufficient, see [Dynamic Topology & π-Calculus: Architectural Trade-Offs](../concepts/dynamic_topology.md).
+
 ---
 
 ## 2. Network Architecture & Topology

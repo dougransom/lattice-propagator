@@ -69,6 +69,7 @@ nav:
       - The Information Semilattice: concepts/lattices.md
       - Reactive Cells & Networks: concepts/networks.md
       - Truth Maintenance & Backtracking: concepts/tms.md
+      - Dynamic Topology & π-Calculus: concepts/dynamic_topology.md
   - Applications in Building & Home Automation:
       - Overview: building_automation/index.md
       - Event Buses, Node-RED, π-Calculus & Propagators: building_automation/paradigms_and_pi_calculus.md
