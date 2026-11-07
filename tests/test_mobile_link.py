@@ -196,6 +196,13 @@ def test_dynamic_ev_power_routing_hourly_simulation() -> None:
     rivian.set_value(IntervalValue(0.0, 11.5), source="hardware_envelope")
     tesla.set_value(IntervalValue(0.0, 7.6), source="hardware_envelope")
 
+    # Battery pack capacities and initial state of charge (SOC)
+    cap_rivian = 135.0  # Rivian R1S (135 kWh pack)
+    cap_tesla = 75.0  # Tesla Model Y (75 kWh pack)
+
+    e_rivian = IntervalValue(cap_rivian * 0.67, cap_rivian * 0.67)  # Starts at 67.0% (90.45 kWh)
+    e_tesla = IntervalValue(cap_tesla * 0.20, cap_tesla * 0.20)  # Starts at 20.0% (15.00 kWh)
+
     net.add_propagator(AdderPropagator("power_balance", baseload, surplus, solar))
     net.add_propagator(
         MobileLinkPropagator(
@@ -230,11 +237,33 @@ def test_dynamic_ev_power_routing_hourly_simulation() -> None:
         if vehicle_id == "rivian":
             assert rivian.value == surplus.value
             assert tesla.value == IntervalValue(0.0, 7.6)
+            e_rivian = IntervalValue(
+                e_rivian.min_val + rivian.value.min_val,
+                e_rivian.max_val + rivian.value.max_val,
+            )
         elif vehicle_id == "tesla":
             assert rivian.value == IntervalValue(0.0, 11.5)
             assert tesla.value == surplus.value
+            e_tesla = IntervalValue(
+                e_tesla.min_val + tesla.value.min_val,
+                e_tesla.max_val + tesla.value.max_val,
+            )
         elif vehicle_id == "guest_ev":
             assert rivian.value == IntervalValue(0.0, 11.5)
             assert tesla.value == IntervalValue(0.0, 7.6)
             assert "guest_ev" in net.cells
             assert net.cells["guest_ev"].value == surplus.value
+
+    # Verify final integrated state of charge intervals
+    soc_r_final = IntervalValue(
+        e_rivian.min_val / cap_rivian * 100.0,
+        e_rivian.max_val / cap_rivian * 100.0,
+    )
+    soc_t_final = IntervalValue(
+        e_tesla.min_val / cap_tesla * 100.0,
+        e_tesla.max_val / cap_tesla * 100.0,
+    )
+    assert 72.5 <= soc_r_final.min_val <= 73.0
+    assert 74.0 <= soc_r_final.max_val <= 74.5
+    assert 33.0 <= soc_t_final.min_val <= 33.5
+    assert 35.0 <= soc_t_final.max_val <= 35.5
