@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from lattice_propagator import (
     BOTTOM,
+    AdderPropagator,
     BeliefMassValue,
     Contradiction,
     DiscreteDomain,
@@ -178,3 +179,57 @@ def test_base_propagator_emit_inherits_upstream_assumption_and_confidence() -> N
     culprit = ntms.resolve_contradiction(c.tms.active_sources)
     assert culprit == "hyp_a_high"
     assert c.value == IntervalValue(10.0, 20.0)
+
+
+def test_dynamic_ev_power_routing_hourly_simulation() -> None:
+    """Verify π-calculus mobile link in a 5-hour solar EV charging splitter simulation."""
+    net = PropagatorNetwork("SolarEVSplitter")
+
+    solar = net.add_cell("solar_production", unit="kW")
+    baseload = net.add_cell("home_baseload", unit="kW")
+    surplus = net.add_cell("solar_surplus", unit="kW")
+    channel = net.add_cell("active_vehicle")
+
+    rivian = net.add_cell("rivian_power", unit="kW")
+    tesla = net.add_cell("tesla_power", unit="kW")
+
+    rivian.set_value(IntervalValue(0.0, 11.5), source="hardware_envelope")
+    tesla.set_value(IntervalValue(0.0, 7.6), source="hardware_envelope")
+
+    net.add_propagator(AdderPropagator("power_balance", baseload, surplus, solar))
+    net.add_propagator(
+        MobileLinkPropagator(
+            "ev_dispatcher",
+            channel_cell=channel,
+            payload_cell=surplus,
+            targets={"rivian": rivian, "tesla": tesla},
+            spawn_missing=True,
+        )
+    )
+
+    hourly_readings = [
+        ("11:00", IntervalValue(3.5, 4.0), IntervalValue(0.5, 0.8), "rivian"),
+        ("12:00", IntervalValue(6.0, 7.5), IntervalValue(1.0, 1.2), "rivian"),
+        ("13:00", IntervalValue(6.8, 7.2), IntervalValue(0.6, 0.8), "tesla"),
+        ("14:00", IntervalValue(5.0, 5.5), IntervalValue(0.8, 1.0), "tesla"),
+        ("15:00", IntervalValue(4.2, 4.8), IntervalValue(0.7, 0.9), "guest_ev"),
+    ]
+
+    for _hour, sol_val, base_val, vehicle_id in hourly_readings:
+        surplus.set_value(BOTTOM, overwrite=True)
+        solar.set_value(sol_val, overwrite=True)
+        baseload.set_value(base_val, overwrite=True)
+        channel.set_value(DiscreteDomain.single(vehicle_id), overwrite=True)
+        net.run()
+
+        if vehicle_id == "rivian":
+            assert rivian.value == surplus.value
+            assert tesla.value == IntervalValue(0.0, 7.6)
+        elif vehicle_id == "tesla":
+            assert rivian.value == IntervalValue(0.0, 11.5)
+            assert tesla.value == surplus.value
+        elif vehicle_id == "guest_ev":
+            assert rivian.value == IntervalValue(0.0, 11.5)
+            assert tesla.value == IntervalValue(0.0, 7.6)
+            assert "guest_ev" in net.cells
+            assert net.cells["guest_ev"].value == surplus.value

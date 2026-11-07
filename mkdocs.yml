@@ -85,6 +85,7 @@ nav:
       - Kinematic Reachability Envelopes: examples/kinematics.md
       - Time-of-Day Circular Intervals: examples/clock_intervals.md
       - Signal Trajectories & Curve Generation: examples/trajectories.md
+      - Dynamic EV Power Routing & π-Mobility: examples/dynamic_power_routing.md
   - API Reference:
       - lattice: api/lattice.md
       - primitives: api/primitives.md
