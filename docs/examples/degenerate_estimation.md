@@ -1,13 +1,13 @@
-# Example: Multi-Source Degenerate Computation & Fault-Tolerant Estimation
+# Example: Vehicle Localization & Garage Presence via Degenerate Estimation
 
-In *Software Design for Flexibility* (MIT Press, 2021) and Gerald Jay Sussman's seminal MIT lectures, **degeneracy** describes systems where structurally different computational mechanisms compute the same quantity.
+In *Software Design for Flexibility* (MIT Press, 2021) and Gerald Jay Sussman's foundational MIT lectures, **degeneracy** describes architectures where structurally different computational mechanisms calculate the same target state.
 
-Unlike simple duplication (voting identical sensors), degenerate systems combine **heterogeneous sources of information**:
-- **Direct Empirical Sensing**: High-accuracy IoT sensors ($[21.2, 21.8]^\circ\text{C}$, priority $1.0$).
-- **Physics-Based Dynamic Simulation**: Thermal lumped-capacitance RC model driven by HVAC heat flux and outdoor ambient temperature ($[20.5, 22.5]^\circ\text{C}$, priority $0.7$).
-- **Heuristic Baseline & Schedule**: Occupancy time-of-day profile ($[19.0, 24.0]^\circ\text{C}$, priority $0.3$).
+Unlike simple sensor duplication, degenerate computation combines **heterogeneous physical pathways**:
+- **Overhead Camera AI Bounding Box (`branch_camera`, priority 1.0)**: Vision model (e.g. Frigate / Coral TPU in Home Assistant) detects the vehicle inside the garage bay and draws a bounding frame, accurate to about $2\text{ ft}$ ($[5.0, 7.0]\text{ ft}$). It operates only when the car is inside the garage, parked, and within line of sight.
+- **Multi-Proxy BLE iBeacon (`branch_ble_proxies`, priority 0.8)**: An iBeacon mounted on the front bumper communicates with three ESPHome Bluetooth Proxies. It estimates longitudinal distance along the garage-driveway axis ($[4.0, 9.0]\text{ ft}$ in garage, $[21.0, 27.0]\text{ ft}$ in driveway). However, when the garage door is closed, external proxies lose line-of-sight, and multipath reflections can occasionally produce anomalies.
+- **Garage Door Barrier Constraint (`branch_door_constraint`, priority 0.5)**: Track contact sensor. When closed, the physical barrier enforces that the vehicle cannot occupy the door boundary ($x \le 18.0\text{ ft}$ if inside, $x \ge 18.0\text{ ft}$ if outside).
 
-When all pathways are healthy, they **monotonically refine uncertainty** via join-semilattice intersection ($\sqcap$). If a high-fidelity sensor drops offline or glitches with an unphysical reading (e.g., $48.0^\circ\text{C}$), the integrated Truth Maintenance System (TMS) detects the contradiction ($\top$), executes Dependency-Directed Backtracking (DDB) to retract the faulty branch, and **gracefully degrades** without system failure.
+When all pathways are available, they **monotonically refine spatial uncertainty** via interval intersection ($\sqcap$). If the car parks outside in the driveway (where the garage camera is blind) or if closing the garage door causes a BLE proxy dropout, the [`DegeneratePipeline`](file:///home/doug/code/lattice-propagator/docs/api/degenerate.md) seamlessly transitions to a **degraded mode**. If a multipath RF reflection asserts an impossible driveway reading while the camera sees the car in the bay, the Truth Maintenance System (TMS) isolates the conflict ($\top$) and uses Dependency-Directed Backtracking (DDB) to retract the faulty branch.
 
 ---
 
@@ -15,10 +15,10 @@ When all pathways are healthy, they **monotonically refine uncertainty** via joi
 
 ```mermaid
 graph TD
-    subgraph Pathways ["Heterogeneous Computational Pathways"]
-        Sensor["Primary Sensor<br/>[21.2, 21.8]°C (priority: 1.0)"]
-        RCModel["Thermal RC Model<br/>[20.5, 22.5]°C (priority: 0.7)"]
-        Schedule["Comfort Envelope<br/>[19.0, 24.0]°C (priority: 0.3)"]
+    subgraph Pathways ["Heterogeneous Localization Pathways"]
+        Camera["Garage Camera AI<br/>Bounding Frame: [5.0, 7.0] ft (priority: 1.0)"]
+        BLE["BLE Proxies (3x ESPHome)<br/>Front iBeacon: [4.0, 9.0] ft (priority: 0.8)"]
+        Door["Garage Door Sensor<br/>Closed Barrier: [0.0, 18.0] ft (priority: 0.5)"]
     end
 
     subgraph Pipeline ["Degenerate Coordination"]
@@ -26,18 +26,20 @@ graph TD
     end
 
     subgraph Target ["Synthesized State"]
-        TargetCell["Cell: room_temperature<br/>[21.2, 21.8]°C"]
+        TargetCell["Cell: car_position<br/>[5.0, 7.0] ft (Inside Garage)"]
     end
 
-    Sensor -->|branch_sensor| DegPipe
-    RCModel -->|branch_model| DegPipe
-    Schedule -->|branch_schedule| DegPipe
+    Camera -->|branch_camera| DegPipe
+    BLE -->|branch_ble_proxies| DegPipe
+    Door -->|branch_door_constraint| DegPipe
     DegPipe --> TargetCell
 ```
 
 ---
 
-## 2. Multi-Pathway Consensus & Refinement
+## 2. Multi-Pathway Consensus in Garage Bay
+
+When the car is parked in the garage, the camera bounding box, front-bumper BLE iBeacon proxies, and closed door sensor all contribute:
 
 ```python
 from lattice_propagator import (
@@ -49,61 +51,62 @@ from lattice_propagator import (
 )
 
 # 1. Initialize Network and TMS
-net = PropagatorNetwork("Degenerate_Thermal_Estimation")
+net = PropagatorNetwork("Vehicle_Localization")
 tms = NetworkTMS(net)
 
-# 2. Allocate Pathway Input Cells
-c_sensor = net.add_cell("sensor_reading")
-c_model = net.add_cell("rc_model_estimate")
-c_schedule = net.add_cell("schedule_envelope")
+# 2. Allocate Pathway Input Cells (distance in feet from garage back wall)
+c_camera = net.add_cell("camera_bounding_box")
+c_ble = net.add_cell("ble_proxy_estimate")
+c_door = net.add_cell("door_barrier_constraint")
 
-target = net.add_cell("room_temperature")
+target = net.add_cell("car_position", unit="ft")
 
 # 3. Define Heterogeneous Branches with Defeasible Priorities
-b_sensor = DegenerateBranch("sensor", c_sensor, priority=1.0)
-b_model = DegenerateBranch("rc_model", c_model, priority=0.7)
-b_schedule = DegenerateBranch("schedule", c_schedule, priority=0.3)
+b_camera = DegenerateBranch("camera", c_camera, priority=1.0)
+b_ble = DegenerateBranch("ble_proxies", c_ble, priority=0.8)
+b_door = DegenerateBranch("door_constraint", c_door, priority=0.5)
 
 pipeline = add_degenerate_pipeline(
     net,
     target,
-    [b_sensor, b_model, b_schedule],
+    [b_camera, b_ble, b_door],
     mode="consensus",
 )
 
-# 4. Provide Initial Evidence:
-#    Schedule: Wide baseline [19.0, 24.0]°C
-c_schedule.set_value(IntervalValue(19.0, 24.0))
+# 4. Assert Evidence for Parked Vehicle:
+#    Door contact: Garage door closed => car constrained to [0.0, 18.0] ft
+c_door.set_value(IntervalValue(0.0, 18.0))
 
-#    RC Model: Physics simulation [20.5, 22.5]°C
-c_model.set_value(IntervalValue(20.5, 22.5))
+#    BLE Proxies: 3 proxies trilaterate beacon to [4.0, 9.0] ft
+c_ble.set_value(IntervalValue(4.0, 9.0))
 
-#    Primary Sensor: Fine-grained measurement [21.2, 21.8]°C
-c_sensor.set_value(IntervalValue(21.2, 21.8))
+#    Camera AI: Computer vision bounding frame puts car at [5.0, 7.0] ft (2 ft frame)
+c_camera.set_value(IntervalValue(5.0, 7.0))
 
 net.run()
 
 # 5. Verify Monotonic Consensus Fusion:
-#    [19.0, 24.0] ⊓ [20.5, 22.5] ⊓ [21.2, 21.8] = [21.2, 21.8]°C
-print(f"Synthesized Target: {target.value}")
-assert target.value == IntervalValue(21.2, 21.8)
+#    [0.0, 18.0] ⊓ [4.0, 9.0] ⊓ [5.0, 7.0] = [5.0, 7.0] ft
+print(f"Synthesized Vehicle Position: {target.value} ft")
+assert target.value == IntervalValue(5.0, 7.0)
 assert pipeline.status == "consensus"
 assert pipeline.is_degraded is False
 
-# 6. Human-Readable Fusion Explanation from TMS
+# 6. Human-Readable Provenance Explanation from TMS
 explanation = tms.explain(target.cell_id)
 print(f"TMS Fusion Explanation:\n{explanation}")
-assert "sensor" in explanation
+assert "camera" in explanation
 ```
 
 ---
 
-## 3. Graceful Degradation upon Sensor Loss
+## 3. Graceful Degradation (Car in Driveway / Camera Blind)
 
-When the primary physical sensor drops offline, the pipeline dynamically retracts its assumption and smoothly degrades to the secondary physical model:
+When the car is parked outside in the driveway, the overhead garage camera cannot see it (reports $\bot$). The system gracefully degrades to the BLE proxies and open door threshold:
 
 ```python
 from lattice_propagator import (
+    Bottom,
     DegenerateBranch,
     IntervalValue,
     NetworkTMS,
@@ -111,42 +114,47 @@ from lattice_propagator import (
     add_degenerate_pipeline,
 )
 
-net = PropagatorNetwork("Degradation_Demo")
+net = PropagatorNetwork("Driveway_Localization")
 NetworkTMS(net)
 
-c_sensor = net.add_cell("sensor", IntervalValue(21.2, 21.8))
-c_model = net.add_cell("rc_model", IntervalValue(20.5, 22.5))
-c_schedule = net.add_cell("schedule", IntervalValue(19.0, 24.0))
-target = net.add_cell("room_temp")
+# Target: car position along longitudinal axis (ft)
+target = net.add_cell("car_position", unit="ft")
+
+# Camera is blind (car is outside in driveway) => Bottom
+c_camera = net.add_cell("camera", Bottom())
+
+# BLE Proxies detect beacon out in the driveway: [21.0, 27.0] ft
+c_ble = net.add_cell("ble", IntervalValue(21.0, 27.0))
+
+# Door is open/driveway boundary: [18.0, 40.0] ft
+c_door = net.add_cell("door", IntervalValue(18.0, 40.0))
 
 pipeline = add_degenerate_pipeline(
     net,
     target,
     [
-        DegenerateBranch("sensor", c_sensor, priority=1.0),
-        DegenerateBranch("rc_model", c_model, priority=0.7),
-        DegenerateBranch("schedule", c_schedule, priority=0.3),
+        DegenerateBranch("camera", c_camera, priority=1.0),
+        DegenerateBranch("ble_proxies", c_ble, priority=0.8),
+        DegenerateBranch("door_constraint", c_door, priority=0.5),
     ],
 )
 net.run()
-assert target.value == IntervalValue(21.2, 21.8)
 
-# Simulate Sensor Failure / Dropout
-pipeline.retract_branch("sensor", reason="battery_exhausted")
-net.run()
-
-# Target automatically relaxes to RC Model ⊓ Schedule = [20.5, 22.5]°C
-print(f"Degraded Estimate: {target.value}")
-assert target.value == IntervalValue(20.5, 22.5)
+# Pipeline operates smoothly on secondary pathways without failing
+# [21.0, 27.0] ⊓ [18.0, 40.0] = [21.0, 27.0] ft
+print(f"Driveway Degraded Position: {target.value} ft")
+assert target.value == IntervalValue(21.0, 27.0)
 assert pipeline.is_degraded is True
 assert pipeline.status == "degraded"
 ```
 
 ---
 
-## 4. Conflict Resolution via Dependency-Directed Backtracking
+## 4. RF Reflection Conflict & Backtracking Recovery
 
-If a faulty sensor asserts an erroneous reading ($48.0^\circ\text{C}$) that conflicts with the thermal dynamics model, the system registers a `Contradiction` ($\top$) and automatically isolates the culprit:
+Suppose the car is parked in the garage bay ($[5.0, 7.0]\text{ ft}$ verified by the camera). A multipath RF bounce or proxy anomaly asserts that the beacon is out in the driveway ($[24.0, 29.0]\text{ ft}$).
+
+The empty intersection causes a `Contradiction` ($\top$). Dependency-Directed Backtracking isolates the lower-priority BLE reading and restores the verified camera position:
 
 ```python
 from lattice_propagator import (
@@ -158,33 +166,36 @@ from lattice_propagator import (
     add_degenerate_pipeline,
 )
 
-net = PropagatorNetwork("Conflict_Recovery")
-tms = NetworkTMS(net)
+net = PropagatorNetwork("BLE_Conflict_Recovery")
+NetworkTMS(net)
 
-# Glitched sensor reports extreme heat [45.0, 50.0]°C
-c_glitched = net.add_cell("glitched_sensor", IntervalValue(45.0, 50.0))
-c_model = net.add_cell("physics_model", IntervalValue(20.5, 22.5))
-target = net.add_cell("safe_temp")
+target = net.add_cell("car_position", unit="ft")
 
-# Assign model higher confidence than the suspect sensor
-b_sensor = DegenerateBranch("sensor", c_glitched, priority=0.4)
-b_model = DegenerateBranch("model", c_model, priority=0.9)
+# Camera AI reliably detects car in the garage bay
+c_camera = net.add_cell("camera", IntervalValue(5.0, 7.0))
 
-pipeline = add_degenerate_pipeline(net, target, [b_sensor, b_model])
+# Glitched BLE proxy reads multipath reflection in driveway [24.0, 29.0] ft
+c_ble_glitch = net.add_cell("ble_glitched", IntervalValue(24.0, 29.0))
+
+# Camera has higher priority (1.0) than suspect BLE proxy (0.8)
+b_camera = DegenerateBranch("camera", c_camera, priority=1.0)
+b_ble = DegenerateBranch("ble_proxies", c_ble_glitch, priority=0.8)
+
+pipeline = add_degenerate_pipeline(net, target, [b_camera, b_ble])
 net.run()
 
-# Detect contradiction: [45.0, 50.0] ∩ [20.5, 22.5] = ∅
+# Contradiction detected: [5.0, 7.0] ∩ [24.0, 29.0] = ∅
 assert isinstance(target.value, Contradiction)
 assert pipeline.status == "contradiction"
-print(f"Contradiction detected: {target.value.reason}")
+print(f"Conflict detected: {target.value.reason}")
 
-# Invoke Dependency-Directed Backtracking (DDB)
+# Invoke Dependency-Directed Backtracking (DDB) to resolve conflict
 culprit = pipeline.resolve_conflict()
-print(f"DDB isolated and retracted culprit assumption: {culprit}")
-assert culprit == "branch_sensor"
+print(f"TMS isolated and retracted faulty assumption: {culprit}")
+assert culprit == "branch_ble_proxies"
 
-# Safe operating state is immediately restored
-assert target.value == IntervalValue(20.5, 22.5)
+# Target immediately recovers to the camera-verified bay position
+assert target.value == IntervalValue(5.0, 7.0)
 assert pipeline.status == "degraded"
-print(f"Restored Temperature: {target.value}")
+print(f"Restored Position: {target.value} ft")
 ```

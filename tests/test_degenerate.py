@@ -177,3 +177,37 @@ def test_degenerate_pipeline_tiered_mode() -> None:
 
     # Tiered fallback selects med
     assert target.value == IntervalValue(20.0, 24.0)
+
+
+def test_vehicle_localization_degenerate_estimation() -> None:
+    """Vehicle localization: camera bounding box, 3x BLE proxies, and door constraint."""
+    net = PropagatorNetwork("CarLocalization")
+    NetworkTMS(net)
+    pos = net.add_cell("car_pos")
+
+    c_cam = net.add_cell("camera", IntervalValue(5.0, 7.0))
+    c_ble = net.add_cell("ble_proxies", IntervalValue(4.0, 9.0))
+    c_door = net.add_cell("door", IntervalValue(0.0, 18.0))
+
+    b_cam = DegenerateBranch("camera", c_cam, priority=1.0)
+    b_ble = DegenerateBranch("ble", c_ble, priority=0.8)
+    b_door = DegenerateBranch("door", c_door, priority=0.5)
+
+    pipe = add_degenerate_pipeline(net, pos, [b_cam, b_ble, b_door])
+    net.run()
+
+    # Consensus in garage bay
+    assert pos.value == IntervalValue(5.0, 7.0)
+    assert pipe.status == "consensus"
+    assert pipe.is_degraded is False
+
+    # Simulate camera unable to see car (e.g. car moved to driveway)
+    pipe.retract_branch("camera", reason="car_in_driveway")
+    c_ble.set_value(IntervalValue(22.0, 26.0), overwrite=True)
+    c_door.set_value(IntervalValue(18.0, 40.0), overwrite=True)
+    net.run()
+
+    # Degrades gracefully to BLE + Driveway door constraint
+    assert pos.value == IntervalValue(22.0, 26.0)
+    assert pipe.is_degraded is True
+    assert pipe.status == "degraded"

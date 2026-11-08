@@ -92,7 +92,7 @@ nav:
       - CDCL SAT Solver via Two-Watched-Literals: examples/sat_solver.md
       - Wheatstone Bridge & Non-Linear Circuits: examples/wheatstone_bridge.md
       - Type Inference & Term Unification: examples/type_inference.md
-      - Multi-Source Degenerate Estimation: examples/degenerate_estimation.md
+      - Vehicle Localization & Degenerate Estimation: examples/degenerate_estimation.md
   - API Reference:
       - lattice: api/lattice.md
       - primitives: api/primitives.md
