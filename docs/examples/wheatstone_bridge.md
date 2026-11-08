@@ -9,7 +9,9 @@ A classic demonstration of constraint propagation (Sussman & Steele, 1980; Hanso
 
 ---
 
-## 1. Schematic Diagram
+## 1. Schematic Diagram (Electrical View)
+
+![Wheatstone Bridge Circuit Schematic](../assets/wheatstone_bridge.svg)
 
 ```mermaid
 graph TD

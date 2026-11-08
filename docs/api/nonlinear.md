@@ -13,3 +13,4 @@ Non-linear continuous interval contraction constraints operating monotonically o
         - add_power_constraint
         - add_sqrt_constraint
         - add_exp_constraint
+

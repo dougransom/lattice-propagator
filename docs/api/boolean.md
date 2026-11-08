@@ -17,3 +17,4 @@ Boolean logic gates, Two-Watched-Literals SAT constraints, and multi-directional
         - add_not_gate
         - add_xor_gate
         - add_clause
+
