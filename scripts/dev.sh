@@ -9,6 +9,7 @@
 #   ./scripts/dev.sh metadata
 #   ./scripts/dev.sh build
 #   ./scripts/dev.sh check
+#   ./scripts/dev.sh schematics
 
 set -euo pipefail
 

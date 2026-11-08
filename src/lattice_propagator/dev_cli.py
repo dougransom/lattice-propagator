@@ -246,6 +246,14 @@ def cmd_build(args: argparse.Namespace) -> int:
     return _run_cmd(cmd)
 
 
+def cmd_schematics(args: argparse.Namespace) -> int:
+    """Generate circuit schematic SVGs for documentation using schemdraw."""
+    from .schematics import main as schematics_main
+
+    extra = args.extra_args if hasattr(args, "extra_args") else []
+    return schematics_main(extra)
+
+
 def check_hac_compliance(repo_root: Path = REPO_ROOT) -> int:
     """Verify Home Assistant Core import compliance rules (REQ-HAC)."""
     errors = []
@@ -380,6 +388,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     # check
     p_check = subparsers.add_parser("check", help="Run lint, test, and docs-build in sequence.")
     p_check.set_defaults(func=cmd_check)
+
+    # schematics
+    p_schem = subparsers.add_parser(
+        "schematics", help="Generate circuit schematics with schemdraw."
+    )
+    p_schem.add_argument("extra_args", nargs="*", help="Extra arguments passed to schematics CLI.")
+    p_schem.set_defaults(func=cmd_schematics)
 
     args = parser.parse_args(argv)
     return args.func(args)

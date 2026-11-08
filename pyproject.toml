@@ -53,6 +53,8 @@ classifiers = [
 
 [project.scripts]
 lattice-dev = "lattice_propagator.dev_cli:main"
+generate-schematics = "lattice_propagator.schematics:main"
+lattice-schematics = "lattice_propagator.schematics:main"
 
 [project.optional-dependencies]
 dev = [
