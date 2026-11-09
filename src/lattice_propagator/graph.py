@@ -249,7 +249,7 @@ def walk_downstream(
     """
     start_cells = (
         [network_or_cell]
-        if start is None and hasattr(network_or_cell, "propagators")
+        if start is None and hasattr(network_or_cell, "cell_id")
         else [start]
         if isinstance(start, object) and hasattr(start, "cell_id")
         else list(start)
@@ -319,7 +319,7 @@ def walk_upstream(
     """
     target_cells = (
         [network_or_cell]
-        if target is None and hasattr(network_or_cell, "propagators")
+        if target is None and hasattr(network_or_cell, "cell_id")
         else [target]
         if isinstance(target, object) and hasattr(target, "cell_id")
         else list(target)
@@ -329,10 +329,10 @@ def walk_upstream(
 
     # Build backward map from output cell roots to propagators
     net = (
-        network_or_cell.network
-        if hasattr(network_or_cell, "network") and network_or_cell.network is not None
-        else network_or_cell
+        network_or_cell
         if hasattr(network_or_cell, "propagators") and hasattr(network_or_cell, "cells")
+        else network_or_cell.network
+        if hasattr(network_or_cell, "network") and network_or_cell.network is not None
         else None
     )
 

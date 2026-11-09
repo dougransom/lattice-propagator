@@ -25,6 +25,7 @@ import math
 from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -41,8 +42,10 @@ from .lattice import (
     GaussianValue,
     IntervalValue,
     LatticeValue,
+    MapLattice,
     OrderedInterval,
     SetLattice,
+    coerce_to_lattice_value,
     merge_lattice,
 )
 from .tms import ExplanationNode, Justification, Translator
@@ -54,14 +57,14 @@ class Cell:
     def __init__(
         self,
         cell_id: str,
-        value: LatticeValue = BOTTOM,
+        value: Any = BOTTOM,
         propagators: Sequence[Propagator] | None = None,
         network: PropagatorNetwork | None = None,
         unit: str = "",
         display_name: str | None = None,
     ) -> None:
         self.cell_id = cell_id
-        self._value = value
+        self._value = value if isinstance(value, LatticeValue) else coerce_to_lattice_value(value)
         self.propagators: list[Propagator] = list(propagators) if propagators is not None else []
         self.network = network
         self.unit = unit
@@ -84,10 +87,44 @@ class Cell:
         return self._find()._value
 
     @value.setter
-    def value(self, new_value: LatticeValue) -> None:
-        """Set the canonical value of this cell."""
-        root = self._find()
-        root._value = new_value
+    def value(self, new_value: Any) -> None:
+        """Set or overwrite the canonical value of this cell, notifying network observers."""
+        coerced = (
+            new_value if isinstance(new_value, LatticeValue) else coerce_to_lattice_value(new_value)
+        )
+        self.set_value(coerced, overwrite=True)
+
+    @property
+    def val(self) -> Any:
+        """Extract the unwrapped Python primitive from the canonical lattice value."""
+        v = self.value
+        if isinstance(v, FlatValue):
+            return v.val
+        if isinstance(v, IntervalValue):
+            return (v.min_val, v.max_val)
+        if isinstance(v, DiscreteDomain):
+            return v.candidates
+        if isinstance(v, SetLattice):
+            return v.elements
+        if isinstance(v, MapLattice):
+            return v.mapping
+        if isinstance(v, (Bottom, Contradiction)):
+            return None
+        return v
+
+    @property
+    def raw(self) -> Any:
+        """Alias for self.val."""
+        return self.val
+
+    def bind(self, other: Cell) -> None:
+        """Unify/bind this cell with another cell (alias for unify)."""
+        self.unify(other)
+
+    def __lshift__(self, other: Cell) -> Cell:
+        """Bind this cell to another cell or expression: `c << (a + b)`."""
+        self.unify(other)
+        return self
 
     def add_propagator(self, propagator: Propagator) -> None:
         """Register a propagator that observes this cell or its canonical representative."""
@@ -195,7 +232,7 @@ class Cell:
 
     def set_value(
         self,
-        new_value: LatticeValue,
+        new_value: LatticeValue | Any,
         source: str | None = None,
         overwrite: bool = False,
         justification: Justification | None = None,
@@ -207,12 +244,15 @@ class Cell:
 
         Returns True if the cell's value was updated (information gained).
         """
+        coerced = (
+            new_value if isinstance(new_value, LatticeValue) else coerce_to_lattice_value(new_value)
+        )
         root = self._find()
         if source:
             tms = root.get_or_create_tms()
             tms.assert_evidence(
                 source_id=source,
-                value=new_value,
+                value=coerced,
                 justification=justification,
                 confidence=confidence,
                 is_assumption=is_assumption,
@@ -220,14 +260,14 @@ class Cell:
             )
 
         if overwrite or root._value == BOTTOM:
-            if root._value == new_value:
+            if root._value == coerced:
                 return False
-            root._value = new_value
+            root._value = coerced
             if root.network:
                 root.network.notify_changed(root, source=source)
             return True
 
-        merged = merge_lattice(root._value, new_value)
+        merged = merge_lattice(root._value, coerced)
         if merged == root._value:
             return False
 
@@ -431,7 +471,10 @@ class Propagator(ABC):
         )
         is_direct_assumption = self.is_assumption or force_assumption
 
-        if recompute_tms:
+        has_network_tms = (
+            target.network is not None and getattr(target.network, "tms", None) is not None
+        )
+        if recompute_tms or has_network_tms:
             tms = target.get_or_create_tms()
             tms.assert_evidence(
                 source_id=src,
@@ -671,6 +714,11 @@ def _coerce_to_cell(val: Any, network: PropagatorNetwork, role: str) -> Cell:
         if cid in network.cells:
             return network.cells[cid]
         return network.add_cell(cid, IntervalValue(float(val), float(val)))
+    if isinstance(val, str):
+        cid = f"const_{val}"
+        if cid in network.cells:
+            return network.cells[cid]
+        return network.add_cell(cid, FlatValue(val))
     if isinstance(val, LatticeValue):
         cid = f"const_{type(val).__name__}_{id(val)}"
         return network.add_cell(cid, val)
@@ -1212,6 +1260,86 @@ def lift_propagator(
         confidence=confidence,
         is_assumption=is_assumption,
     )
+
+
+class FunctionalRelation:
+    """Multi-directional or unidirectional functional constraint relation."""
+
+    def __init__(
+        self,
+        forward_fn: Callable[..., Any],
+        inputs: Sequence[str | Cell],
+        outputs: Sequence[str | Cell],
+        name: str | None = None,
+        confidence: float = 1.0,
+    ) -> None:
+        self.forward_fn = forward_fn
+        self.inputs = list(inputs)
+        self.outputs = list(outputs)
+        self.name = name or forward_fn.__name__
+        self.confidence = confidence
+        self.inversions: list[tuple[Callable[..., Any], list[str | Cell], list[str | Cell]]] = []
+        self._attached_networks: list[PropagatorNetwork] = []
+
+    def invert(
+        self,
+        inputs: Sequence[str | Cell],
+        outputs: Sequence[str | Cell],
+    ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """Register an inverted causal direction for this relation."""
+
+        def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
+            self.inversions.append((fn, list(inputs), list(outputs)))
+            for net in self._attached_networks:
+                idx = len(self.inversions) - 1
+                self._attach_direction(
+                    net, f"{self.name}_inv_{idx}", fn, list(inputs), list(outputs)
+                )
+            return fn
+
+        return decorator
+
+    def attach(self, network: PropagatorNetwork) -> None:
+        """Attach this relation and all registered inversions to a network."""
+        if network not in self._attached_networks:
+            self._attached_networks.append(network)
+        self._attach_direction(
+            network, f"{self.name}_fwd", self.forward_fn, self.inputs, self.outputs
+        )
+        for idx, (inv_fn, inv_inputs, inv_outputs) in enumerate(self.inversions):
+            self._attach_direction(
+                network, f"{self.name}_inv_{idx}", inv_fn, inv_inputs, inv_outputs
+            )
+
+    def _attach_direction(
+        self,
+        network: PropagatorNetwork,
+        prop_name: str,
+        fn: Callable[..., Any],
+        in_specs: list[str | Cell],
+        out_specs: list[str | Cell],
+    ) -> None:
+        in_cells = [network.add_cell(spec) if isinstance(spec, str) else spec for spec in in_specs]
+        out_cells = [
+            network.add_cell(spec) if isinstance(spec, str) else spec for spec in out_specs
+        ]
+        if not out_cells:
+            return
+        out_cell = out_cells[0]
+
+        def lifted_fn(*args: Any) -> LatticeValue:
+            raw_args = [a.val if isinstance(a, Cell) else getattr(a, "val", a) for a in args]
+            res = fn(*raw_args)
+            return res if isinstance(res, LatticeValue) else coerce_to_lattice_value(res)
+
+        p = lift_propagator(
+            prop_name,
+            lifted_fn,
+            in_cells,
+            out_cell,
+            confidence=self.confidence,
+        )
+        network.add_propagator(p)
 
 
 class RatePropagator(Propagator):
@@ -2104,25 +2232,103 @@ class PropagatorNetwork:
         self.propagators: list[Propagator] = []
         self._queue: deque[Propagator] = deque()
         self._sources_log: dict[str, list[str]] = {}
+        self.tms: Any = None
+
+    @property
+    def network(self) -> PropagatorNetwork:
+        """Self-reference to network for uniform duck-typing with Cell.network."""
+        return self
+
+    def __getattr__(self, name: str) -> Cell:
+        """Retrieve or dynamically create a cell from the network by attribute name."""
+        if (
+            name.startswith("_")
+            or name in {"name", "cells", "propagators", "tms"}
+            or hasattr(type(self), name)
+        ):
+            raise AttributeError(name)
+        cells = self.__dict__.get("cells")
+        if cells is not None:
+            if name in cells:
+                return cells[name]
+            return self.add_cell(name)
+        raise AttributeError(f"Network {self.name!r} has no cell or attribute {name!r}")
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Assign a cell or value to the network as a named cell."""
+        if (
+            name.startswith("_")
+            or name in {"name", "cells", "propagators", "tms"}
+            or hasattr(type(self), name)
+        ):
+            super().__setattr__(name, value)
+            return
+
+        if isinstance(value, Cell):
+            if name in self.cells:
+                self.cells[name].unify(value)
+            else:
+                c = self.add_cell(name)
+                c.unify(value)
+            return
+
+        cell = self.add_cell(name)
+        cell.set_value(value, overwrite=True)
+
+    def __getitem__(self, key: str) -> Cell:
+        """Access a cell by dictionary key."""
+        if key in self.cells:
+            return self.cells[key]
+        raise KeyError(f"Cell {key!r} not found in network {self.name!r}")
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        """Assign a cell or value by dictionary key."""
+        setattr(self, key, value)
+
+    def __delitem__(self, key: str) -> None:
+        """Remove a cell from the network dictionary."""
+        if key in self.cells:
+            del self.cells[key]
+        else:
+            raise KeyError(f"Cell {key!r} not found in network {self.name!r}")
+
+    def __contains__(self, key: str) -> bool:
+        """Check if a cell exists in the network."""
+        return key in self.cells
+
+    def __iter__(self) -> Iterator[Cell]:
+        """Iterate over all cells in the network."""
+        return iter(self.cells.values())
+
+    def __len__(self) -> int:
+        """Return the count of cells registered in the network."""
+        return len(self.cells)
 
     def add_cell(
         self,
         cell_id: str,
-        initial_value: LatticeValue = BOTTOM,
+        initial_value: Any = BOTTOM,
         unit: str = "",
         display_name: str | None = None,
     ) -> Cell:
         """Create or register a cell in this network."""
         if cell_id in self.cells:
             return self.cells[cell_id]
+        coerced = (
+            initial_value
+            if isinstance(initial_value, LatticeValue)
+            else coerce_to_lattice_value(initial_value)
+        )
         cell = Cell(
             cell_id=cell_id,
-            value=initial_value,
+            value=coerced,
             network=self,
             unit=unit,
             display_name=display_name,
         )
         self.cells[cell_id] = cell
+        if getattr(self, "tms", None) is not None:
+            self.tms.get_or_create_cell_tms(cell_id)
         return cell
 
     def add_propagator(self, propagator: Propagator) -> None:
@@ -2297,6 +2503,80 @@ class PropagatorNetwork:
             group_aliases=group_aliases,
         )
 
+    @contextmanager
+    def assume(
+        self,
+        assumption_id: str,
+        cell: str | Cell | None = None,
+        value: Any = None,
+        confidence: float = 1.0,
+    ) -> Iterator[str]:
+        """Scoped defeasible assumption context manager.
+
+        If cell and value are provided, asserts the assumption into that cell.
+        Upon exiting the context, the assumption (and any premises supported by it)
+        is automatically retracted from the network, and the network re-propagates.
+
+        Args:
+            assumption_id: Unique identifier for the assumption premise.
+            cell: Optional cell name or Cell instance to assert the assumption into.
+            value: Optional value for the cell (coerced if primitive).
+            confidence: Subjective confidence measure in (0.0, 1.0].
+
+        Yields:
+            The assumption identifier.
+        """
+        tms = getattr(self, "tms", None)
+        if tms is None:
+            from .tms import NetworkTMS
+
+            tms = NetworkTMS(self)
+            self.tms = tms
+
+        if cell is not None and value is not None:
+            cid = cell.cell_id if isinstance(cell, Cell) else cell
+            coerced_val = (
+                value if isinstance(value, LatticeValue) else coerce_to_lattice_value(value)
+            )
+            tms.assume(
+                cell_id=cid,
+                assumption_id=assumption_id,
+                value=coerced_val,
+                confidence=confidence,
+            )
+        else:
+            from .tms import Assumption
+
+            tms.assumptions[assumption_id] = Assumption(
+                source_id=assumption_id,
+                value=BOTTOM,
+                confidence=confidence,
+            )
+
+        try:
+            yield assumption_id
+        finally:
+            tms.retract(assumption_id, reason="Exited hypothetical scope")
+            self.run()
+
+    def relation(
+        self,
+        inputs: Sequence[str | Cell],
+        outputs: Sequence[str | Cell],
+        name: str | None = None,
+        confidence: float = 1.0,
+    ) -> Callable[[Callable[..., Any]], FunctionalRelation]:
+        """Decorator to define and attach a functional relation constraint."""
+
+        def decorator(fn: Callable[..., Any]) -> FunctionalRelation:
+            rel = FunctionalRelation(
+                fn, inputs=inputs, outputs=outputs, name=name, confidence=confidence
+            )
+            rel.attach(self)
+            return rel
+
+        return decorator
+
 
 class ChoiceEngine:
     """Interleaves monotonic lattice propagation with speculative branching and backtracking.
@@ -2403,3 +2683,69 @@ class ChoiceEngine:
         for cid, val in saved_state.items():
             self.network.cells[cid].value = val
         return False
+
+
+class CellDescriptor:
+    """Descriptor for declaring reactive cells on a PropagatorModel class."""
+
+    def __init__(
+        self,
+        default: Any = BOTTOM,
+        unit: str = "",
+        display_name: str | None = None,
+    ) -> None:
+        self.default = default
+        self.unit = unit
+        self.display_name = display_name
+        self.name: str = ""
+
+    def __set_name__(self, owner: type, name: str) -> None:
+        self.name = name
+
+    def __get__(self, instance: Any, owner: type) -> Cell | CellDescriptor:
+        if instance is None:
+            return self
+        if self.name not in instance.cells:
+            init_val = (
+                self.default
+                if isinstance(self.default, LatticeValue)
+                else coerce_to_lattice_value(self.default)
+            )
+            cell = instance.add_cell(
+                self.name,
+                initial_value=init_val,
+                unit=self.unit,
+                display_name=self.display_name or self.name,
+            )
+            return cell
+        return instance.cells[self.name]
+
+    def __set__(self, instance: Any, value: Any) -> None:
+        if isinstance(value, Cell):
+            if self.name in instance.cells:
+                instance.cells[self.name].unify(value)
+            else:
+                cell = instance.add_cell(
+                    self.name,
+                    unit=self.unit,
+                    display_name=self.display_name or self.name,
+                )
+                cell.unify(value)
+        else:
+            cell = self.__get__(instance, type(instance))
+            cell.set_value(value, overwrite=True)
+
+
+class PropagatorModel(PropagatorNetwork):
+    """Declarative component base class for class-based propagator networks."""
+
+    def __init__(self, name: str | None = None) -> None:
+        super().__init__(name=name or self.__class__.__name__)
+        for cls in reversed(self.__class__.__mro__):
+            for attr, val in cls.__dict__.items():
+                if isinstance(val, CellDescriptor):
+                    getattr(self, attr)
+        self.setup()
+
+    def setup(self) -> None:
+        """Lifecycle hook for wiring internal constraints and sub-models."""

@@ -792,3 +792,34 @@ def merge_lattice(a: LatticeValue, b: LatticeValue) -> LatticeValue:
         reason=f"Incompatible lattice value types: {type(a).__name__} vs {type(b).__name__}",
         conflicting_values=(a, b),
     )
+
+
+def coerce_to_lattice_value(val: Any) -> LatticeValue:
+    """Coerce raw Python primitives into appropriate LatticeValue subtypes.
+
+    Args:
+        val: A LatticeValue instance or raw Python primitive (int, float, bool, str, tuple, set, dict, None).
+
+    Returns:
+        Corresponding LatticeValue.
+    """
+    if isinstance(val, LatticeValue):
+        return val
+    if val is None:
+        return BOTTOM
+    if isinstance(val, bool):
+        return FlatValue(val)
+    if isinstance(val, (int, float, str)):
+        return FlatValue(val)
+    if (
+        isinstance(val, (tuple, list))
+        and len(val) == 2
+        and isinstance(val[0], (int, float))
+        and isinstance(val[1], (int, float))
+    ):
+        return IntervalValue(float(val[0]), float(val[1]))
+    if isinstance(val, (set, frozenset)):
+        return SetLattice(val)
+    if isinstance(val, dict):
+        return MapLattice(val)
+    return FlatValue(val)

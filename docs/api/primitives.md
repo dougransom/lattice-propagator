@@ -7,7 +7,9 @@ Reactive containers, worklist fixed-point engine, and built-in constraint propag
       show_root_heading: true
       members:
         - Cell
+        - CellDescriptor
         - Propagator
+        - PropagatorModel
         - PropagatorNetwork
         - AdderPropagator
         - MultiplierPropagator
@@ -15,6 +17,7 @@ Reactive containers, worklist fixed-point engine, and built-in constraint propag
         - MobileLinkPropagator
         - ConditionalPropagator
         - FunctionalPropagator
+        - FunctionalRelation
         - lift_propagator
         - ArithmeticPropagator
         - RatePropagator
