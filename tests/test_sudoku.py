@@ -14,6 +14,7 @@ from collections.abc import Sequence
 from lattice_propagator.lattice import Contradiction, DiscreteDomain
 from lattice_propagator.primitives import (
     AllDifferentPropagator,
+    AllDistinctPropagator,
     Cell,
     PropagatorNetwork,
 )
@@ -103,3 +104,72 @@ def test_sudoku_conflict_contradiction() -> None:
     contradictions = [c for row in grid for c in row if isinstance(c.value, Contradiction)]
     assert len(contradictions) > 0
     assert any("Duplicate value 5 in Row_1" in c.value.reason for c in contradictions)
+
+
+def test_all_distinct_naked_pair_pruning() -> None:
+    """Verify that AllDistinctPropagator prunes naked pairs without guessing."""
+    net = PropagatorNetwork("NakedPairNet")
+    c1 = net.add_cell("c1", DiscreteDomain([1, 2]))
+    c2 = net.add_cell("c2", DiscreteDomain([1, 2]))
+    c3 = net.add_cell("c3", DiscreteDomain([1, 2, 3]))
+
+    net.add_propagator(AllDistinctPropagator("distinct_unit", [c1, c2, c3]))
+    net.run()
+
+    # C1 and C2 saturate {1, 2}, forcing C3 to prune 1 and 2, resolving to 3
+    assert c3.value == DiscreteDomain.single(3)
+    assert c1.value == DiscreteDomain([1, 2])
+    assert c2.value == DiscreteDomain([1, 2])
+
+
+def test_all_distinct_hall_condition_violation() -> None:
+    """Verify that AllDistinctPropagator signals Contradiction when Hall condition fails."""
+    net = PropagatorNetwork("HallViolationNet")
+    # 3 variables sharing only 2 candidate values
+    c1 = net.add_cell("c1", DiscreteDomain([1, 2]))
+    c2 = net.add_cell("c2", DiscreteDomain([1, 2]))
+    c3 = net.add_cell("c3", DiscreteDomain([1, 2]))
+
+    net.add_propagator(AllDistinctPropagator("hall_unit", [c1, c2, c3]))
+    net.run()
+
+    # Must signal contradiction immediately without search
+    assert any(isinstance(c.value, Contradiction) for c in [c1, c2, c3])
+
+
+def test_sudoku_solve_with_all_distinct() -> None:
+    """Verify full Sudoku puzzle solving using AllDistinctPropagator."""
+    net = PropagatorNetwork("SudokuDistinct")
+    grid = [[net.add_cell(f"R{r + 1}C{c + 1}") for c in range(9)] for r in range(9)]
+
+    # 9 Row constraints
+    for r in range(9):
+        net.add_propagator(AllDistinctPropagator(f"Row_{r + 1}", grid[r]))
+
+    # 9 Column constraints
+    for c in range(9):
+        net.add_propagator(AllDistinctPropagator(f"Col_{c + 1}", [grid[r][c] for r in range(9)]))
+
+    # 9 Box (3x3) constraints
+    for br in range(3):
+        for bc in range(3):
+            box_cells = [grid[br * 3 + r][bc * 3 + c] for r in range(3) for c in range(3)]
+            net.add_propagator(AllDistinctPropagator(f"Box_{br + 1}_{bc + 1}", box_cells))
+
+    puzzle_str = "003020600900305001001806400008102900700000008006708200002609500800203009005010300"
+    for i, ch in enumerate(puzzle_str):
+        r, c = divmod(i, 9)
+        val = int(ch)
+        initial_domain = DiscreteDomain.single(val) if val != 0 else DiscreteDomain.range(1, 10)
+        grid[r][c].set_value(initial_domain, overwrite=True)
+
+    net.run(max_iterations=500)
+
+    # Verify all 81 cells solved
+    solved_cells = [
+        grid[r][c].value.value
+        for r in range(9)
+        for c in range(9)
+        if isinstance(grid[r][c].value, DiscreteDomain) and grid[r][c].value.is_determined
+    ]
+    assert len(solved_cells) == 81

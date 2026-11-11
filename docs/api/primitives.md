@@ -16,9 +16,17 @@ Reactive containers, worklist fixed-point engine, and built-in constraint propag
         - SwitchPropagator
         - MobileLinkPropagator
         - ConditionalPropagator
+        - DelayedPropagator
+        - delay_propagator
         - FunctionalPropagator
         - FunctionalRelation
         - lift_propagator
+        - build_binary_op
+        - build_unary_op
+        - register_binary_op
+        - register_unary_op
+        - tree_reduce
+        - tree_sum
         - ArithmeticPropagator
         - RatePropagator
         - LagPropagator
@@ -30,4 +38,5 @@ Reactive containers, worklist fixed-point engine, and built-in constraint propag
         - TrajectorySegment
         - TrajectoryEnvelopePropagator
         - AllDifferentPropagator
+        - AllDistinctPropagator
         - ChoiceEngine

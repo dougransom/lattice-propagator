@@ -709,3 +709,215 @@ def test_abstract_collection_interfaces():
     # 8. MapLattice accepts Mapping (MappingProxyType)
     ml = MapLattice(MappingProxyType({"key": FlatValue(123)}))
     assert ml.mapping["key"] == FlatValue(123)
+
+
+def test_build_binary_and_unary_ops_and_registration() -> None:
+    """Verify expression functionalization via build_binary_op, build_unary_op, and registration."""
+    import pytest
+
+    from lattice_propagator import (
+        FlatValue,
+        IntervalValue,
+        PowerPropagator,
+        PropagatorNetwork,
+        build_binary_op,
+        build_unary_op,
+        register_binary_op,
+    )
+
+    net = PropagatorNetwork("OpsTest")
+    a = net.add_cell("a", FlatValue(10.0))
+    b = net.add_cell("b", FlatValue(5.0))
+
+    # 1. Direct invocation of build_binary_op
+    c_add = build_binary_op(a, b, "add")
+    c_sub = build_binary_op(a, b, "sub")
+    c_mul = build_binary_op(a, b, "mul")
+    c_div = build_binary_op(a, b, "div")
+
+    net.run()
+    assert c_add.value == FlatValue(15.0)
+    assert c_sub.value == FlatValue(5.0)
+    assert c_mul.value == FlatValue(50.0)
+    assert c_div.value == FlatValue(2.0)
+
+    # 2. Multi-directional backward deduction through operator expressions
+    net2 = PropagatorNetwork("BackwardNet")
+    x = net2.add_cell("x", IntervalValue(7.0, 7.0))
+    y = net2.add_cell("y")  # Unknown initially
+    z = (x + y) * 3.0  # Functional expression
+    z.set_value(IntervalValue(30.0, 30.0))  # Assert output: (7 + y) * 3 = 30 => y = 3
+    net2.run()
+    assert y.value == IntervalValue(3.0, 3.0)
+
+    # 3. Custom operator registration
+    register_binary_op("custom_pow", "**", PowerPropagator)
+    base = net.add_cell("base", FlatValue(2.0))
+    exponent = net.add_cell("exp", FlatValue(3.0))
+    p_cell = build_binary_op(base, exponent, "custom_pow")
+    net.run()
+    assert p_cell.value == FlatValue(8.0)
+
+    # 4. Unknown operator error handling
+    with pytest.raises(ValueError, match="Unsupported binary operator"):
+        build_binary_op(a, b, "non_existent_op")
+
+    with pytest.raises(ValueError, match="Unsupported unary operator"):
+        build_unary_op(a, "non_existent_unary_op")
+
+
+def test_delayed_propagator_and_retraction() -> None:
+    """Verify DelayedPropagator activation, subnetwork spawning, and retraction lifecycle."""
+    from lattice_propagator import (
+        BOTTOM,
+        AdderPropagator,
+        Cell,
+        FlatValue,
+        PropagatorNetwork,
+        delay_propagator,
+    )
+
+    net = PropagatorNetwork("DelayTest")
+    trigger = net.add_cell("trigger")  # initially Bottom
+    inp_a = net.add_cell("inp_a", FlatValue(10))
+    inp_b = net.add_cell("inp_b", FlatValue(20))
+    out_cell = net.add_cell("out_cell")
+
+    # Use delay_propagator decorator
+    @delay_propagator(
+        "spawn_adder", [trigger], condition=lambda v: getattr(v, "val", None) == "ACTIVATE"
+    )
+    def build_adder(network: PropagatorNetwork, trig: Cell) -> list[AdderPropagator]:
+        adder = AdderPropagator("delayed_adder", inp_a, inp_b, out_cell)
+        return [adder]
+
+    net.run()
+    # Trigger is Bottom, adder not spawned
+    assert out_cell.value == BOTTOM
+    assert len(net.propagators) == 1  # Only the DelayedPropagator
+
+    # 1. Activate condition
+    trigger.set_value(FlatValue("ACTIVATE"))
+    net.run()
+    assert out_cell.value == FlatValue(30)
+    assert len(net.propagators) == 2  # DelayedPropagator + delayed_adder
+
+    # 2. Deactivate via condition change -> unhooks adder & retracts output deduction
+    trigger.set_value(FlatValue("DEACTIVATE"), overwrite=True)
+    net.run()
+    assert out_cell.value == BOTTOM
+    assert len(net.propagators) == 1  # delayed_adder was removed cleanly
+
+    # 3. Reactivate
+    trigger.set_value(FlatValue("ACTIVATE"), overwrite=True)
+    net.run()
+    assert out_cell.value == FlatValue(30)
+    assert len(net.propagators) == 2
+
+
+def test_heron_sqrt_delayed_unrolling() -> None:
+    """Verify iterative square root approximation using recursive delayed subnetwork unrolling."""
+    from lattice_propagator import (
+        Cell,
+        FlatValue,
+        PropagatorNetwork,
+        delay_propagator,
+    )
+
+    net = PropagatorNetwork("HeronNet")
+    x = net.add_cell("x", FlatValue(25.0))
+    g0 = net.add_cell("g0", FlatValue(1.0))  # initial guess
+    sqrt_result = net.add_cell("sqrt_result")
+
+    epsilon = 1e-4
+
+    def wire_heron_stage(
+        stage_net: PropagatorNetwork, radicand_cell: Cell, guess_cell: Cell, stage_num: int
+    ) -> None:
+        val_x = getattr(radicand_cell.value, "val", None)
+        val_g = getattr(guess_cell.value, "val", None)
+        if val_x is None or val_g is None or val_g <= 0.0:
+            return
+
+        # Next approximation: g_next = 0.5 * (g + x / g)
+        g_next_val = 0.5 * (val_g + val_x / val_g)
+        g_next_cell = stage_net.add_cell(f"g_{stage_num}", FlatValue(g_next_val))
+
+        # Check convergence: |g_next^2 - x| < epsilon
+        if abs(g_next_val * g_next_val - val_x) < epsilon or stage_num >= 10:
+            stage_net.unify_cells(g_next_cell, sqrt_result)
+        else:
+            # Recursively delay the next stage
+            delay_propagator(
+                f"delay_stage_{stage_num}",
+                [radicand_cell, g_next_cell],
+                builder=lambda net_sub, rx, rg: wire_heron_stage(net_sub, rx, rg, stage_num + 1),
+            )
+
+    # Initial delayed stage
+    delay_propagator(
+        "delay_stage_1",
+        [x, g0],
+        builder=lambda net_sub, rx, rg: wire_heron_stage(net_sub, rx, rg, 1),
+    )
+
+    net.run()
+    assert sqrt_result.value is not None
+    res = getattr(sqrt_result.value, "val", None)
+    assert res is not None
+    assert abs(res - 5.0) < epsilon
+
+
+def test_tree_reduce_and_tree_sum() -> None:
+    """Verify balanced binary tree reductions and multi-directional deduction."""
+    import pytest
+
+    from lattice_propagator import (
+        FlatValue,
+        IntervalValue,
+        PropagatorNetwork,
+        tree_reduce,
+        tree_sum,
+    )
+
+    net = PropagatorNetwork("TreeNet")
+
+    # 1. Empty sequence
+    z = tree_sum([], network=net)
+    assert z.value == FlatValue(0)
+
+    with pytest.raises(ValueError, match="Cannot reduce an empty sequence"):
+        tree_reduce("add", [], network=net)
+
+    # 2. Single element
+    c1 = net.add_cell("c1", FlatValue(42))
+    assert tree_sum([c1]) is c1
+    assert tree_reduce("add", [c1]) is c1
+
+    # 3. Balanced summation of 8 cells
+    cells = [net.add_cell(f"n_{i}", IntervalValue(float(i), float(i))) for i in range(1, 9)]
+    # Sum of 1..8 is 36
+    total = tree_sum(cells, network=net)
+    net.run()
+    assert total.value == IntervalValue(36.0, 36.0)
+
+    # 4. Multi-directional backward deduction through tree_sum
+    net2 = PropagatorNetwork("TreeBackward")
+    a = net2.add_cell("a", IntervalValue(10.0, 10.0))
+    b = net2.add_cell("b", IntervalValue(20.0, 20.0))
+    c = net2.add_cell("c", IntervalValue(30.0, 30.0))
+    d = net2.add_cell("d")  # Unknown initially
+
+    total2 = tree_sum([a, b, c, d], network=net2)
+    total2.set_value(IntervalValue(100.0, 100.0))
+    net2.run()
+    # 10 + 20 + 30 + d = 100 => d = 40
+    assert d.value == IntervalValue(40.0, 40.0)
+
+    # 5. tree_reduce with multiplication
+    net3 = PropagatorNetwork("TreeMul")
+    m_cells = [net3.add_cell(f"m_{i}", IntervalValue(2.0, 2.0)) for i in range(4)]
+    # 2^4 = 16
+    product = tree_reduce("mul", m_cells, network=net3)
+    net3.run()
+    assert product.value == IntervalValue(16.0, 16.0)

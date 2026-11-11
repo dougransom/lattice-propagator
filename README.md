@@ -5,12 +5,18 @@
 [![Python: 3.11+](https://img.shields.io/badge/Python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)](https://www.python.org/)
 [![Zero Runtime Dependencies](https://img.shields.io/badge/dependencies-0%20runtime-success)](pyproject.toml)
 [![PEP 561: py.typed](https://img.shields.io/badge/PEP%20561-py.typed-blue)](src/lattice_propagator/py.typed)
+[![Documentation](https://img.shields.io/badge/docs-gh--pages-blue.svg)](https://dougransom.github.io/lattice-propagator/)
 
 **Lattice Propagator** is a pure Python implementation of the **propagator computational paradigm** over partial-information join-semilattices with integrated Truth Maintenance Systems (TMS).
 
 Pioneered by Gerald Jay Sussman and Alexey Radul at MIT, propagator networks replace traditional directional computation (y = f(x)) with autonomous, multi-directional constraint networks operating monotonically over partial information.
 
 Originally developed for sensor fusion, thermal dynamics, and fuzzy control in [Home Assistant](https://www.home-assistant.io), this library is completely standalone with **zero runtime dependencies**.
+
+> **Documentation Quick Links:**
+> - 🌐 **Online Documentation:** [https://dougransom.github.io/lattice-propagator/](https://dougransom.github.io/lattice-propagator/)
+> - 💻 **Local Live Preview:** Run `./scripts/dev.sh docs-serve` → [http://127.0.0.1:8000](http://127.0.0.1:8000)
+> - 📖 **Getting Started Guide:** [docs/getting_started.md](docs/getting_started.md) (or browse offline build: `site/index.html` via `./scripts/dev.sh docs-build`)
 
 ---
 

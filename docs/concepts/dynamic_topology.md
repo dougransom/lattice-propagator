@@ -67,6 +67,52 @@ In Robin Milner's $\pi$-calculus ($c?(y).\, y!\langle v \rangle$), communication
 3. The Rivian cell’s internal TMS immediately re-evaluates all remaining active premises (its baseline `hardware_envelope`).
 4. The cell cleanly **relaxes** back to $[0.0, 11.5]\,\text{kW}$ without any manual zeroing command or network reset!
 
+### 1.1 Introductory Example: Dynamic Target Handoff
+
+The following minimal example illustrates how `MobileLinkPropagator` dynamically redirects an interval payload between two target nodes based on the value in `route_channel`. When the destination moves, the vacated node automatically relaxes back to its initial unconstrained baseline:
+
+```python
+from lattice_propagator import (
+    DiscreteDomain,
+    IntervalValue,
+    MobileLinkPropagator,
+    PropagatorNetwork,
+)
+
+net = PropagatorNetwork("PiMobilityDemo")
+
+# Two target nodes with baseline operating envelopes [0.0, 100.0]
+node_a = net.add_cell("node_a", IntervalValue(0.0, 100.0))
+node_b = net.add_cell("node_b", IntervalValue(0.0, 100.0))
+
+# Mobile payload [20.0, 30.0] and a channel cell holding the active destination name
+payload = net.add_cell("payload", IntervalValue(20.0, 30.0))
+route_channel = net.add_cell("route_channel")
+
+net.add_propagator(
+    MobileLinkPropagator(
+        "mobile_link",
+        channel_cell=route_channel,
+        payload_cell=payload,
+        targets={"a": node_a, "b": node_b},
+    )
+)
+
+# 1. Bind channel to "a" → node_a refines to [0, 100] ⊔ [20, 30] = [20, 30]
+route_channel.set_value(DiscreteDomain.single("a"), overwrite=True)
+net.run()
+print(f"node_a: {node_a.value}, node_b: {node_b.value}")
+assert node_a.value == IntervalValue(20.0, 30.0)
+assert node_b.value == IntervalValue(0.0, 100.0)
+
+# 2. Move channel to "b" → node_a automatically relaxes to [0, 100], node_b refines to [20, 30]
+route_channel.set_value(DiscreteDomain.single("b"), overwrite=True)
+net.run()
+print(f"node_a: {node_a.value}, node_b: {node_b.value}")
+assert node_a.value == IntervalValue(0.0, 100.0)
+assert node_b.value == IntervalValue(20.0, 30.0)
+```
+
 ---
 
 ## 2. Static Multiplexers vs. $\pi$-Calculus Link Mobility

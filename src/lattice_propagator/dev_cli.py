@@ -248,10 +248,13 @@ def cmd_build(args: argparse.Namespace) -> int:
 
 def cmd_schematics(args: argparse.Namespace) -> int:
     """Generate circuit schematic SVGs for documentation using schemdraw."""
-    from .schematics import main as schematics_main
+    scripts_dir = REPO_ROOT / "scripts"
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+    import schematics
 
     extra = args.extra_args if hasattr(args, "extra_args") else []
-    return schematics_main(extra)
+    return schematics.main(extra)
 
 
 def check_hac_compliance(repo_root: Path = REPO_ROOT) -> int:

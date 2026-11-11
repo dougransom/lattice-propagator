@@ -13,6 +13,9 @@ A classic demonstration of constraint propagation (Sussman & Steele, 1980; Hanso
 
 ![Wheatstone Bridge Circuit Schematic](../assets/wheatstone_bridge.svg)
 
+> [!TIP] Vector Schematic Generation
+> The vector SVG schematic above is rendered with `schemdraw` and can be regenerated anytime using `./scripts/dev.sh schematics` (or `python3 scripts/generate_schematics.py`).
+
 ```mermaid
 graph TD
     Vs["Source: V_s (10.0V ± 0.5%)"] --> NodeA["Node A (V_s)"]

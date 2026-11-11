@@ -22,19 +22,7 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from .lattice import (
-    BeliefMassValue,
-    Bottom,
-    Contradiction,
-    DiscreteDomain,
-    FlatValue,
-    GaussianValue,
-    IntervalValue,
-    LatticeValue,
-    MapLattice,
-    SetLattice,
-)
-from .tms import format_lattice_value
+from .lattice import LatticeValue
 
 if TYPE_CHECKING:
     from .primitives import Cell, Propagator, PropagatorNetwork
@@ -58,28 +46,17 @@ def sanitize_identifier(raw_id: str, prefix: str = "") -> str:
 def classify_lattice_state(val: LatticeValue) -> str:
     """Classify a lattice value into a semantic display category.
 
+    Decoupled via the polymorphic `category` property on `LatticeValue` instances,
+    avoiding concrete class coupling and `isinstance` cascades.
+
     Args:
         val: The lattice value to classify.
 
     Returns:
         One of 'bottom', 'contradiction', 'interval', 'gaussian',
-        'discrete', 'set', 'map', 'belief', or 'value'.
+        'discrete', 'set', 'belief', or 'value'.
     """
-    if isinstance(val, Bottom):
-        return "bottom"
-    if isinstance(val, Contradiction):
-        return "contradiction"
-    if isinstance(val, IntervalValue):
-        return "interval"
-    if isinstance(val, GaussianValue):
-        return "gaussian"
-    if isinstance(val, DiscreteDomain):
-        return "discrete"
-    if isinstance(val, (SetLattice, MapLattice)):
-        return "set"
-    if isinstance(val, BeliefMassValue):
-        return "belief"
-    return "value"
+    return getattr(val, "category", "value")
 
 
 def format_node_label(
@@ -104,19 +81,9 @@ def format_node_label(
     if not include_value:
         return html.escape(cell_id) if escape_html else cell_id
 
-    if isinstance(val, Bottom):
-        val_str = "⊥"
-    elif isinstance(val, Contradiction):
-        val_str = f"⊤ ({val.reason})"
-    elif isinstance(val, GaussianValue):
-        margin = 1.96 * val.standard_deviation
-        val_str = f"{val.mean:.2f} ± {margin:.2f}{unit} (σ²={val.variance:.3f})"
-    elif isinstance(val, IntervalValue):
-        val_str = f"[{val.min_val:.2f}, {val.max_val:.2f}]{unit}"
-    elif isinstance(val, FlatValue):
-        val_str = f"{val.val}{unit}"
-    else:
-        val_str = format_lattice_value(val, unit=unit)
+    val_str = (
+        val.format_display(unit=unit, precision=2) if hasattr(val, "format_display") else str(val)
+    )
 
     raw_label = f"{cell_id}\\n{val_str}"
     return html.escape(raw_label) if escape_html else raw_label
@@ -251,7 +218,7 @@ def walk_downstream(
         [network_or_cell]
         if start is None and hasattr(network_or_cell, "cell_id")
         else [start]
-        if isinstance(start, object) and hasattr(start, "cell_id")
+        if hasattr(start, "cell_id")
         else list(start)
         if start is not None
         else []
@@ -321,7 +288,7 @@ def walk_upstream(
         [network_or_cell]
         if target is None and hasattr(network_or_cell, "cell_id")
         else [target]
-        if isinstance(target, object) and hasattr(target, "cell_id")
+        if hasattr(target, "cell_id")
         else list(target)
         if target is not None
         else []
@@ -656,19 +623,12 @@ class NetworkGraph:
             if include_values and node.cell is not None:
                 val = node.cell.value
                 unit = node.metadata.get("unit", "")
-                if isinstance(val, Bottom):
-                    val_str = "<br/>⊥"
-                elif isinstance(val, Contradiction):
-                    val_str = f"<br/>⊤ ({val.reason})"
-                elif isinstance(val, GaussianValue):
-                    margin = 1.96 * val.standard_deviation
-                    val_str = f"<br/>{val.mean:.2f} ± {margin:.2f}{unit}"
-                elif isinstance(val, IntervalValue):
-                    val_str = f"<br/>[{val.min_val:.2f}, {val.max_val:.2f}]{unit}"
-                elif isinstance(val, FlatValue):
-                    val_str = f"<br/>{val.val}{unit}"
-                else:
-                    val_str = f"<br/>{format_lattice_value(val, unit=unit)}"
+                formatted = (
+                    val.format_display(unit=unit, precision=2)
+                    if hasattr(val, "format_display")
+                    else str(val)
+                )
+                val_str = f"<br/>{formatted}"
 
             safe_label = f"{node.label}{val_str}".replace('"', "'")
             style_suffix = f":::{node.state}" if style_states else ""
@@ -735,19 +695,12 @@ class NetworkGraph:
             if include_values and node.cell is not None:
                 val = node.cell.value
                 unit = node.metadata.get("unit", "")
-                if isinstance(val, Bottom):
-                    val_str = r"\n⊥"
-                elif isinstance(val, Contradiction):
-                    val_str = rf"\n⊤ ({val.reason})"
-                elif isinstance(val, GaussianValue):
-                    margin = 1.96 * val.standard_deviation
-                    val_str = rf"\n{val.mean:.2f} ± {margin:.2f}{unit}"
-                elif isinstance(val, IntervalValue):
-                    val_str = rf"\n[{val.min_val:.2f}, {val.max_val:.2f}]{unit}"
-                elif isinstance(val, FlatValue):
-                    val_str = rf"\n{val.val}{unit}"
-                else:
-                    val_str = rf"\n{format_lattice_value(val, unit=unit)}"
+                formatted = (
+                    val.format_display(unit=unit, precision=2)
+                    if hasattr(val, "format_display")
+                    else str(val)
+                )
+                val_str = rf"\n{formatted}"
 
             label = f"{node.label}{val_str}".replace('"', r"\"")
 

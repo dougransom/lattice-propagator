@@ -2,7 +2,7 @@ cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 title: "lattice-propagator"
 version: "0.0.1dev1"
-date-released: "2026-11-08"
+date-released: "2026-11-11"
 abstract: "Monotonic constraint networks and sensor fusion over partial-information lattices"
 repository-code: "https://github.com/dougransom/lattice-propagator"
 license: "MIT"

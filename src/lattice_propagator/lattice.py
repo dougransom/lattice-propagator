@@ -20,21 +20,41 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar
 
 
 @dataclass(frozen=True)
 class LatticeValue:
-    """Base class for all elements of an information lattice."""
+    """Base class for all elements of an information lattice.
+
+    Attributes:
+        category: Semantic display category for graph renderers, visualizers,
+            and export tools (e.g. 'bottom', 'contradiction', 'interval',
+            'gaussian', 'discrete', 'set', 'belief', or 'value').
+            Decouples visualizers and graph traversals from concrete class
+            hierarchies and `isinstance` checks.
+    """
+
+    category: ClassVar[str] = "value"
 
     def merge(self, other: LatticeValue) -> LatticeValue:
         """Monotonically merge this value with another lattice value."""
         return merge_lattice(self, other)
 
+    def format_display(self, unit: str = "", precision: int = 2) -> str:
+        """Format this lattice value for graph visualization and human display."""
+        return f"{self}{unit}"
+
 
 @dataclass(frozen=True)
 class Bottom(LatticeValue):
     """Bottom element (⊥): represents complete ignorance or absence of data."""
+
+    category: ClassVar[str] = "bottom"
+
+    def format_display(self, unit: str = "", precision: int = 2) -> str:
+        """Format bottom state for graph node visualization."""
+        return "⊥"
 
     def __repr__(self) -> str:
         return "⊥(Bottom)"
@@ -44,8 +64,13 @@ class Bottom(LatticeValue):
 class Contradiction(LatticeValue):
     """Top element (⊤): represents a mutual contradiction between premises."""
 
+    category: ClassVar[str] = "contradiction"
     reason: str = "Conflicting premises"
     conflicting_values: tuple[Any, ...] = field(default_factory=tuple)
+
+    def format_display(self, unit: str = "", precision: int = 2) -> str:
+        """Format contradiction state with reason for graph node visualization."""
+        return f"⊤ ({self.reason})"
 
     def __repr__(self) -> str:
         return f"⊤(Contradiction: {self.reason})"
@@ -58,8 +83,14 @@ class GaussianValue(LatticeValue):
     Used for continuous sensor measurements with estimated noise/variance.
     """
 
+    category: ClassVar[str] = "gaussian"
     mean: float
     variance: float
+
+    def format_display(self, unit: str = "", precision: int = 2) -> str:
+        """Format Gaussian distribution mean ± 95% margin for graph nodes."""
+        margin = 1.96 * self.standard_deviation
+        return f"{self.mean:.{precision}f} ± {margin:.{precision}f}{unit}"
 
     def __post_init__(self) -> None:
         if self.variance <= 0.0:
@@ -94,8 +125,13 @@ class IntervalValue(LatticeValue):
     Supports interval arithmetic (+, -, *, clamp).
     """
 
+    category: ClassVar[str] = "interval"
     min_val: float
     max_val: float
+
+    def format_display(self, unit: str = "", precision: int = 2) -> str:
+        """Format interval bounds for graph visualization."""
+        return f"[{self.min_val:.{precision}f}, {self.max_val:.{precision}f}]{unit}"
 
     def __post_init__(self) -> None:
         if self.min_val > self.max_val:
@@ -205,9 +241,14 @@ class CircularInterval(LatticeValue):
       - 2 * pi: Angles (radians)
     """
 
+    category: ClassVar[str] = "interval"
     start: float
     end: float
     modulus: float = 360.0
+
+    def format_display(self, unit: str = "", precision: int = 2) -> str:
+        """Format circular interval for graph visualization."""
+        return f"[{self.start:.{precision}f}, {self.end:.{precision}f}]{unit} (mod {self.modulus:.{precision}f})"
 
     def __post_init__(self) -> None:
         if self.modulus <= 0.0:
@@ -262,9 +303,16 @@ class OrderedInterval(LatticeValue):
     - Discrete device modes (e.g. fan speeds: low < medium < high < turbo)
     """
 
+    category: ClassVar[str] = "interval"
     min_val: Any
     max_val: Any
     domain: tuple[Any, ...] | None = None
+
+    def format_display(self, unit: str = "", precision: int = 2) -> str:
+        """Format ordered interval for graph visualization."""
+        if self.is_determined:
+            return f"{self.min_val}{unit}"
+        return f"[{self.min_val}, {self.max_val}]{unit}"
 
     def __post_init__(self) -> None:
         if self.domain is not None:
@@ -348,7 +396,17 @@ class DiscreteDomain(LatticeValue):
     Used for finite-domain constraints, discrete states, and combinatorial problems (e.g., Sudoku).
     """
 
+    category: ClassVar[str] = "discrete"
     candidates: frozenset[Any]
+
+    def format_display(self, unit: str = "", precision: int = 2) -> str:
+        """Format candidate values for graph visualization."""
+        try:
+            sorted_cands = sorted(self.candidates)
+        except TypeError:
+            sorted_cands = sorted(self.candidates, key=str)
+        items = ", ".join(str(x) for x in sorted_cands)
+        return f"{{{items}}}"
 
     def __post_init__(self) -> None:
         if not isinstance(self.candidates, frozenset):
@@ -399,7 +457,12 @@ class FlatValue(LatticeValue):
       FlatValue(v1) ⊔ FlatValue(v2) = FlatValue(v1) if v1 == v2 else Contradiction
     """
 
+    category: ClassVar[str] = "value"
     val: Any
+
+    def format_display(self, unit: str = "", precision: int = 2) -> str:
+        """Format flat scalar value for graph visualization."""
+        return f"{self.val}{unit}"
 
     def __repr__(self) -> str:
         return f"Flat({self.val!r})"
@@ -414,7 +477,17 @@ class SetLattice(LatticeValue):
       SetLattice(s1) ⊔ SetLattice(s2) = SetLattice(s1 ∪ s2)
     """
 
+    category: ClassVar[str] = "set"
     elements: frozenset[Any] = field(default_factory=frozenset)
+
+    def format_display(self, unit: str = "", precision: int = 2) -> str:
+        """Format set elements for graph visualization."""
+        try:
+            sorted_elems = sorted(self.elements)
+        except TypeError:
+            sorted_elems = sorted(self.elements, key=str)
+        items = ", ".join(str(x) for x in sorted_elems)
+        return f"{{{items}}}"
 
     def __post_init__(self) -> None:
         if not isinstance(self.elements, frozenset):
@@ -447,7 +520,16 @@ class MapLattice(LatticeValue):
     If any key merge results in a Contradiction, the entire map becomes a Contradiction.
     """
 
+    category: ClassVar[str] = "set"
     mapping: Mapping[Any, LatticeValue] = field(default_factory=dict)
+
+    def format_display(self, unit: str = "", precision: int = 2) -> str:
+        """Format key-value map for graph visualization."""
+        entries = ", ".join(
+            f"{k}: {v.format_display(precision=precision) if hasattr(v, 'format_display') else str(v)}"
+            for k, v in self.mapping.items()
+        )
+        return f"{{{entries}}}"
 
     def __repr__(self) -> str:
         return f"MapLattice{{{', '.join(f'{k}: {v}' for k, v in self.mapping.items())}}}"
@@ -462,8 +544,17 @@ class BeliefMassValue(LatticeValue):
     (vacuous belief) is represented by assigning mass 1.0 to the entire frame Θ.
     """
 
+    category: ClassVar[str] = "belief"
     masses: Mapping[frozenset[str], float] = field(default_factory=dict)
     frame: frozenset[str] = field(default_factory=frozenset)
+
+    def format_display(self, unit: str = "", precision: int = 2) -> str:
+        """Format Dempster-Shafer mass assignment for graph visualization."""
+        items = (
+            f"{{{', '.join(sorted(s))}}}: {m:.{precision}f}"
+            for s, m in sorted(self.masses.items(), key=lambda x: -x[1])
+        )
+        return f"BeliefMass({', '.join(items)})"
 
     def __post_init__(self) -> None:
         computed_frame = set(self.frame)

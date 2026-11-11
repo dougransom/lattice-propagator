@@ -46,6 +46,14 @@ print(f"32°F -> {c_rev.value.center}°C")  # Output: 0.0°C (deduced automatica
 
 ---
 
+## Next Steps
+
+Ready to build your first reactive constraint network? Follow the hands-on tutorial covering installation, cell operator syntax, and visualization:
+
+[Start with the Getting Started Guide →](getting_started.md){ .md-button .md-button--primary }
+
+---
+
 ## Theoretical Foundations & Literature
 
 1. **Radul, A., & Sussman, G. J. (2009)**. *"The Art of the Propagator"*. MIT Computer Science and Artificial Intelligence Laboratory Technical Report, MIT-CSAIL-TR-2009-002. [MIT DSpace](https://dspace.mit.edu/handle/1721.1/44215).

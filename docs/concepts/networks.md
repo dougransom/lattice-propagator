@@ -2,6 +2,9 @@
 
 Propagator networks compute by reaching a **fixed point** across interconnected reactive cells.
 
+> [!TIP] Hands-On Tutorial
+> If you are new to the library, begin with the step-by-step [Getting Started Guide](../getting_started.md) to install the package and wire your first network.
+
 ---
 
 ## 1. The `Cell`
@@ -34,84 +37,7 @@ In complex constraint networks, intermediate computations may produce two cells 
 
 ---
 
-## 2. Static vs. Dynamic Network Topology ($\pi$-Calculus Mobility)
-
-Classical dataflow and propagator networks have a **static graph topology**: wires are fixed before execution begins. However, real-world systems often require **dynamic topology** where connections between cells change at runtime.
-
-> [!NOTE] In-Depth Architectural Analysis
-> For an in-depth discussion on whether $\pi$-calculus link mobility is beneficial or added complexity, and how it resolves the monotonicity dilemma, see [Dynamic Topology & π-Calculus: Architectural Trade-Offs](dynamic_topology.md).
-
-`lattice-propagator` provides three distinct topological mechanisms depending on whether a connection is permanent, gated, or mobile:
-
-| Mechanism | Primitive | Semantics | Retracts on Change? |
-| :--- | :--- | :--- | :---: |
-| **Permanent Equivalence** | `cell_a.unify(cell_b)` | Merges two cells into a single equivalence class forever (Union-Find) | No (monotonic union) |
-| **Static Gated Wire** | `SwitchPropagator` | Forwards `input` to a fixed `output` when `control == on_value` | No |
-| **$\pi$-Calculus Mobile Link** | `MobileLinkPropagator` | Reads target channel name(s) $y$ from `channel_cell` and routes `payload_cell` to $y$ ($c?(y).\, y!\langle v \rangle$) | **Yes** (via `retract_source` when channel moves) |
-
-### How `MobileLinkPropagator` Preserves Semilattice Discipline
-
-In Robin Milner's **$\pi$-calculus**, processes reconfigure their communication graph by sending **channel names** over channels ($c?(y).\, y!\langle v \rangle$) and spawning fresh private channels via the **restriction operator** ($(\nu y)$).
-
-`MobileLinkPropagator` embeds $\pi$-calculus link mobility directly into partial-information lattices:
-
-1. **Channel Names as Lattice Values:**
-   `channel_cell` can hold a single target name (`FlatValue("node_b")`), a multi-target set (`SetLattice({"node_a", "node_b"})`), or an uncertain candidate set (`DiscreteDomain`, `OrderedInterval`, or `BeliefMassValue`).
-2. **TMS-Backed Link Handoff:**
-   Instead of destructively overwriting a target cell, `MobileLinkPropagator` asserts `payload_cell.value` into each active target cell's `TruthMaintenanceSystem` under a link-specific source ID. When `channel_cell` moves to a new target (or resets to `Bottom` $\bot$), the propagator calls `target.retract_source(...)` on the vacated target, allowing it to relax cleanly back to its remaining active premises.
-3. **Uncertainty-Aware Superposition (`propagate_ambiguous=True`):**
-   When `channel_cell` holds multiple unresolved candidates (e.g. `DiscreteDomain({"node_a", "node_b"})`), setting `propagate_ambiguous=True` projects speculative `Assumption` premises (`is_assumption=True`) with scaled confidence across all candidate targets—allowing `NetworkTMS` to automatically retract any branch that causes a downstream `Contradiction` ($\top$).
-4. **Dynamic $(\nu y)$ Cell Creation (`spawn_missing=True`):**
-   If `channel_cell` resolves to a channel name not yet present in the network, `spawn_missing=True` dynamically allocates the new `Cell` on demand.
-
-```python
-from lattice_propagator import (
-    DiscreteDomain,
-    IntervalValue,
-    MobileLinkPropagator,
-    PropagatorNetwork,
-)
-
-net = PropagatorNetwork("PiMobilityDemo")
-
-# Two target nodes with baseline operating envelopes [0.0, 100.0]
-node_a = net.add_cell("node_a", IntervalValue(0.0, 100.0))
-node_b = net.add_cell("node_b", IntervalValue(0.0, 100.0))
-
-# Mobile payload [20.0, 30.0] and a channel cell holding the active destination name
-payload = net.add_cell("payload", IntervalValue(20.0, 30.0))
-route_channel = net.add_cell("route_channel")
-
-net.add_propagator(
-    MobileLinkPropagator(
-        "mobile_link",
-        channel_cell=route_channel,
-        payload_cell=payload,
-        targets={"a": node_a, "b": node_b},
-    )
-)
-
-# 1. Bind channel to "a" → node_a refines to [0, 100] ⊔ [20, 30] = [20, 30]
-route_channel.set_value(DiscreteDomain.single("a"), overwrite=True)
-net.run()
-print(f"node_a: {node_a.value}, node_b: {node_b.value}")
-assert node_a.value == IntervalValue(20.0, 30.0)
-assert node_b.value == IntervalValue(0.0, 100.0)
-
-# 2. Move channel to "b" → node_a automatically relaxes to [0, 100], node_b refines to [20, 30]
-route_channel.set_value(DiscreteDomain.single("b"), overwrite=True)
-net.run()
-print(f"node_a: {node_a.value}, node_b: {node_b.value}")
-assert node_a.value == IntervalValue(0.0, 100.0)
-assert node_b.value == IntervalValue(20.0, 30.0)
-```
-
-!!! info "Deep Dive: Event Buses, Node-RED, $\pi$-Calculus & Propagators"
-    For a full architectural comparison of $\pi$-calculus link mobility (including Microsoft BizTalk XLANG, Kahn Process Networks, and smart-building zone handoff), see [Event Buses, Node-RED, $\pi$-Calculus & Propagators](../building_automation/paradigms_and_pi_calculus.md).
-
----
-
-## 3. Propagators
+## 2. Propagators
 
 A `Propagator` is an autonomous computational unit. It:
 1. Observes a set of input cells.
@@ -119,23 +45,204 @@ A `Propagator` is an autonomous computational unit. It:
 3. Computes deductions.
 4. Writes results to one or more output cells.
 
+### Directed Propagators vs. Multi-directional Constraints
+
+A common point of confusion is whether propagators are "directional" or "multi-directional":
+
+* **Primitive Function Lifts are Directional ($I \to O$):** An individual `FunctionalPropagator` created via `lift_propagator(name, fn, inputs, output)` is strictly unidirectional. Because arbitrary Python callables cannot be symbolically inverted at runtime, information only propagates forward from inputs to output.
+* **Compound Constraints are Multi-directional Bundles:** What we often call an "arithmetic propagator" (like `AdderPropagator`) is actually a compound device bundling multiple directional deduction rules together ($c = a + b$, $a = c - b$, and $b = c - a$), allowing information to flow in any direction.
+* **`FunctionalRelation` Inversions:** To make arbitrary Python functions multi-directional without handcrafting custom classes, use `FunctionalRelation` with registered `.invert(...)` handler functions for reverse deduction paths.
+
+### Expression Functionalization & Operator Overloading
+
+Manually allocating intermediate cells and wiring arithmetic propagators for complex mathematical formulas quickly becomes cumbersome. `lattice-propagator` supports **expression functionalization**: `Cell` instances overload standard Python arithmetic operators (`+`, `-`, `*`, `/`):
+
+```python
+from lattice_propagator import Cell, IntervalValue, PropagatorNetwork
+
+net = PropagatorNetwork("ExpressionDemo")
+a = net.add_cell("a", IntervalValue(10.0, 15.0))
+b = net.add_cell("b", IntervalValue(5.0, 10.0))
+
+# Multi-directional constraint network synthesized automatically:
+c = (a + b) * 2.0
+net.run()
+assert c.value == IntervalValue(30.0, 50.0)
+```
+
+Under the hood, `build_binary_op(left, right, op)`:
+1. Automatically coerces raw constants into immutable constant cells.
+2. Allocates anonymous intermediate cells (e.g. `(a+b)` and `((a+b)*right)`).
+3. Connects multi-directional `AdderPropagator` and `MultiplierPropagator` constraints.
+4. Uses **inverted dispatch**: subtraction (`a - b`) wires `AdderPropagator` with `(out, b, a)` so that `out + b = a`, avoiding redundant arithmetic classes.
+
+```mermaid
+graph LR
+    subgraph ExpressionTree ["Python Expression: c = (a + b) * 2"]
+        C_a["Cell: a"]
+        C_b["Cell: b"]
+        C_2["Const: 2"]
+        P_add["Adder: a + b = t1<br/>(Bidirectional)"]
+        C_t1["Intermediate: (a+b)"]
+        P_mul["Multiplier: t1 * 2 = c<br/>(Bidirectional)"]
+        C_c["Cell: c"]
+
+        C_a <-->|a| P_add
+        C_b <-->|b| P_add
+        P_add <-->|sum| C_t1
+        C_t1 <-->|term| P_mul
+        C_2 -->|factor| P_mul
+        P_mul <-->|product| C_c
+    end
+```
+
+#### Custom Operator Registration
+
+You can register custom binary and unary operators via `register_binary_op` and `register_unary_op`:
+
+```python
+from lattice_propagator import PowerPropagator, register_binary_op
+
+# Register '**' operator mapping to PowerPropagator:
+register_binary_op("pow", "**", PowerPropagator)
+```
+
+### Balanced Tree Reductions (`tree_reduce` & `tree_sum`)
+
+When aggregating a collection of cells (e.g. summing 16 sensor measurements or multiplying factors), standard Python `sum(cells)` or `functools.reduce(...)` constructs a **degenerate linear chain** of depth $O(N)$. Linear chains introduce significant latency: changes at the start must ripple through $N - 1$ sequential propagator steps, causing worklist queue churn.
+
+Instead, prefer **balanced binary reduction trees** using `tree_sum(cells)` or `tree_reduce(op, cells)`:
+
+```python
+from lattice_propagator import IntervalValue, PropagatorNetwork, tree_sum
+
+net = PropagatorNetwork()
+cells = [net.add_cell(f"sensor_{i}", IntervalValue(10.0, 12.0)) for i in range(8)]
+
+# Constructs a balanced tree with depth log2(8) = 3:
+total = tree_sum(cells)
+net.run()
+assert total.value == IntervalValue(80.0, 96.0)
+```
+
+- **Logarithmic Latency:** A change in any leaf reaches the root in only $O(\log N)$ worklist turns.
+- **Fast Backward Deduction:** When `total` is constrained, backward deductions propagate simultaneously down both branches of the balanced tree rather than crawling sequentially through $N$ cells.
+
+### Expression Functionalization & Operator Overloading
+
+Manually allocating intermediate cells and wiring arithmetic propagators for complex mathematical formulas quickly becomes cumbersome. `lattice-propagator` supports **expression functionalization**: `Cell` instances overload standard Python arithmetic operators (`+`, `-`, `*`, `/`):
+
+```python
+from lattice_propagator import Cell, IntervalValue, PropagatorNetwork
+
+net = PropagatorNetwork("ExpressionDemo")
+a = net.add_cell("a", IntervalValue(10.0, 15.0))
+b = net.add_cell("b", IntervalValue(5.0, 10.0))
+
+# Multi-directional constraint network synthesized automatically:
+c = (a + b) * 2.0
+net.run()
+assert c.value == IntervalValue(30.0, 50.0)
+```
+
+Under the hood, `build_binary_op(left, right, op)`:
+1. Automatically coerces raw constants into immutable constant cells.
+2. Allocates anonymous intermediate cells (e.g. `(a+b)` and `((a+b)*right)`).
+3. Connects multi-directional `AdderPropagator` and `MultiplierPropagator` constraints.
+4. Uses **inverted dispatch**: subtraction (`a - b`) wires `AdderPropagator` with `(out, b, a)` so that `out + b = a`, avoiding redundant arithmetic classes.
+
+```mermaid
+graph LR
+    subgraph ExpressionTree ["Python Expression: c = (a + b) * 2"]
+        C_a["Cell: a"]
+        C_b["Cell: b"]
+        C_2["Const: 2"]
+        P_add["Adder: a + b = t1<br/>(Bidirectional)"]
+        C_t1["Intermediate: (a+b)"]
+        P_mul["Multiplier: t1 * 2 = c<br/>(Bidirectional)"]
+        C_c["Cell: c"]
+
+        C_a <-->|a| P_add
+        C_b <-->|b| P_add
+        P_add <-->|sum| C_t1
+        C_t1 <-->|term| P_mul
+        C_2 -->|factor| P_mul
+        P_mul <-->|product| C_c
+    end
+```
+
+#### Custom Operator Registration
+
+You can register custom binary and unary operators via `register_binary_op` and `register_unary_op`:
+
+```python
+from lattice_propagator import PowerPropagator, register_binary_op
+
+# Register '**' operator mapping to PowerPropagator:
+register_binary_op("pow", "**", PowerPropagator)
+```
+
+### Balanced Tree Reductions (`tree_reduce` & `tree_sum`)
+
+When aggregating a collection of cells (e.g. summing 16 sensor measurements or multiplying factors), standard Python `sum(cells)` or `functools.reduce(...)` constructs a **degenerate linear chain** of depth $O(N)$. Linear chains introduce significant latency: changes at the start must ripple through $N - 1$ sequential propagator steps, causing worklist queue churn.
+
+Instead, prefer **balanced binary reduction trees** using `tree_sum(cells)` or `tree_reduce(op, cells)`:
+
+```python
+from lattice_propagator import IntervalValue, PropagatorNetwork, tree_sum
+
+net = PropagatorNetwork()
+cells = [
+    net.add_cell(f"sensor_{i}", IntervalValue(10.0, 12.0)) for i in range(8)
+]
+
+# Constructs a balanced tree with depth log2(8) = 3:
+total = tree_sum(cells)
+net.run()
+assert total.value == IntervalValue(80.0, 96.0)
+```
+
+- **Logarithmic Latency:** A change in any leaf reaches the root in only $O(\log N)$ worklist turns.
+- **Fast Backward Deduction:** When `total` is constrained, backward deductions propagate simultaneously down both branches of the balanced tree rather than crawling sequentially through $N$ cells.
+
 ### Built-in Primitives
 
-| Propagator | Description | Multi-directional? |
+| Propagator | Description | Directionality |
 | :--- | :--- | :---: |
-| `AdderPropagator(a, b, c)` | Enforces $a + b = c$ ($c = a + b, a = c - b, b = c - a$) | Yes |
-| `MultiplierPropagator(a, b, c)` | Enforces $a \times b = c$ with zero-absorption and division | Yes |
-| `SwitchPropagator(control, input, output, trigger)` | Routes `input` to `output` when `control == trigger` | Forward |
-| `MobileLinkPropagator(name, channel, payload, ...)` | $\pi$-calculus link mobility ($c?(y).\, y!\langle v \rangle$) with automatic TMS handoff | Dynamic |
+| `AdderPropagator(a, b, c)` | Enforces $a + b = c$ ($c = a + b, a = c - b, b = c - a$) | Multi-directional |
+| `MultiplierPropagator(a, b, c)` | Enforces $a \times b = c$ with zero-absorption and division | Multi-directional |
+| `SwitchPropagator(control, input, output, trigger)` | Routes `input` to a fixed `output` when `control == trigger` | Forward |
+| `MobileLinkPropagator(name, channel, payload, ...)` | Dynamic routing: destination cell changes based on condition | Dynamic |
 | `ConditionalPropagator(pred, cons, alt, out)` | Multiplexer with Sussman-Radul consensus optimization | Forward |
 | `RatePropagator(source, rate, dt)` | First-order velocity/derivative estimation | Forward |
 | `LagPropagator(input, output, tau, dt)` | First-order exponential lag filter (thermal inertia) | Forward |
 | `KalmanEstimatorPropagator(...)` | Fuses noisy linear dynamics with noisy measurements ([Case study](../examples/sensor_fusion.md#why-a-propagator-instead-of-a-python-function)) | Dynamic |
 | `DempsterShaferPropagator(...)` | Fuses multi-source evidential mass functions over subset lattices | Evidential |
-| `AllDifferentPropagator(cells)` | Pairwise exclusion and hidden-single deduction | Multi |
+| `AllDifferentPropagator(cells)` | Pairwise exclusion and hidden-single deduction | Multi-directional |
 
 !!! tip "Propagators vs. Functions"
     For a concrete case study comparing reactive lattice propagators against classical procedural Python functions (e.g. in Kalman filtering), see [Why a Propagator Instead of a Python Function?](../examples/sensor_fusion.md#why-a-propagator-instead-of-a-python-function).
+
+---
+
+## 3. Connecting Cells: Static Wiring, Gating & Dynamic Routing
+
+In most networks, propagators connect fixed cells: an adder takes cells `a` and `b` and writes to cell `c`. However, constraint networks support three distinct connection models depending on how information flows:
+
+| Connection Model | Primitive | Semantics (Plain English) | Retracts on Change? |
+| :--- | :--- | :--- | :---: |
+| **Permanent Equivalence** | `cell_a.unify(cell_b)` | Permanently merges two cells into a single identity (Union-Find) | No (monotonic union) |
+| **Conditional Gating** | `SwitchPropagator` | Forwards data to a **fixed output** only when a control condition is met (e.g., switch is ON) | No |
+| **Dynamic Routing** | `MobileLinkPropagator` | The **destination cell changes dynamically** based on runtime conditions | **Yes** (vacated cell relaxes) |
+
+### How Dynamic Routing Works
+
+In dynamic routing, you don't hardwire the destination cell in advance:
+1. **The target cell changes based on conditions:** Instead of sending data to a fixed wire, `MobileLinkPropagator` watches a condition cell (such as `route_channel` holding `"car_a"` or `"car_b"`). It routes the payload to whichever target is currently selected.
+2. **Clean relaxation when destination moves:** When the condition changes and the router redirects to a new destination, the previously targeted cell's Truth Maintenance System (TMS) automatically **relaxes** back to its baseline state, without needing manual zeroing or a destructive network reset.
+
+> [!TIP] Advanced Topic: $\pi$-Calculus Mobility & Speculative Routing
+> For the complete architectural analysis, speculative routing with dependency-directed backtracking, and $\pi$-calculus foundations, see the dedicated guide: **[Dynamic Topology & π-Calculus Mobility](dynamic_topology.md)**.
 
 ---
 

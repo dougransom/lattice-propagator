@@ -25,15 +25,76 @@ from lattice_propagator import (
 
 def test_classify_lattice_state() -> None:
     """Verify semantic state classification for lattice values."""
-    from lattice_propagator import BOTTOM, DiscreteDomain, FlatValue, SetLattice
+    from dataclasses import dataclass
+    from typing import ClassVar
+
+    from lattice_propagator import (
+        BOTTOM,
+        BeliefMassValue,
+        CircularInterval,
+        DiscreteDomain,
+        FlatValue,
+        LatticeValue,
+        MapLattice,
+        OrderedInterval,
+        SetLattice,
+    )
 
     assert classify_lattice_state(BOTTOM) == "bottom"
     assert classify_lattice_state(Contradiction("conflict")) == "contradiction"
     assert classify_lattice_state(IntervalValue(10.0, 20.0)) == "interval"
+    assert classify_lattice_state(CircularInterval(0.0, 180.0)) == "interval"
+    assert (
+        classify_lattice_state(OrderedInterval("low", "high", domain=("low", "high"))) == "interval"
+    )
     assert classify_lattice_state(GaussianValue(mean=21.0, variance=0.5)) == "gaussian"
     assert classify_lattice_state(DiscreteDomain([1, 2, 3])) == "discrete"
     assert classify_lattice_state(SetLattice({"a", "b"})) == "set"
+    assert classify_lattice_state(MapLattice({"k": FlatValue(1)})) == "set"
+    assert classify_lattice_state(BeliefMassValue.certain("H", ["H", "¬H"])) == "belief"
     assert classify_lattice_state(FlatValue("hello")) == "value"
+
+    # Custom lattice value with polymorphic category decoupled from isinstance
+    @dataclass(frozen=True)
+    class QuantumLattice(LatticeValue):
+        category: ClassVar[str] = "quantum"
+        amplitude: complex = 1.0 + 0.0j
+
+        def format_display(self, unit: str = "", precision: int = 2) -> str:
+            return f"|ψ⟩={self.amplitude}"
+
+    q = QuantumLattice()
+    assert classify_lattice_state(q) == "quantum"
+    assert q.format_display() == "|ψ⟩=(1+0j)"
+
+
+def test_format_display_and_node_labels() -> None:
+    """Verify polymorphic format_display formatting and format_node_label."""
+    from lattice_propagator import (
+        BOTTOM,
+        DiscreteDomain,
+        FlatValue,
+        SetLattice,
+    )
+    from lattice_propagator.graph import format_node_label
+
+    assert BOTTOM.format_display() == "⊥"
+    assert Contradiction("clash").format_display() == "⊤ (clash)"
+    assert IntervalValue(10.0, 20.0).format_display(unit="°C") == "[10.00, 20.00]°C"
+    assert FlatValue(42).format_display(unit="V") == "42V"
+    assert DiscreteDomain([1, 2]).format_display() == "{1, 2}"
+    assert SetLattice({"x"}).format_display() == "{x}"
+
+    # format_node_label
+    label = format_node_label("temp", IntervalValue(18.0, 22.0), unit="°C")
+    assert label == "temp\\n[18.00, 22.00]°C"
+
+    label_no_val = format_node_label("temp", IntervalValue(18.0, 22.0), include_value=False)
+    assert label_no_val == "temp"
+
+    label_html = format_node_label("temp<1>", FlatValue("<safe>"), escape_html=True)
+    assert "&lt;safe&gt;" in label_html
+    assert "temp&lt;1&gt;" in label_html
 
 
 def test_network_graph_from_network() -> None:

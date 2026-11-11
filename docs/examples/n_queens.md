@@ -4,7 +4,7 @@ The $N$-Queens problem requires placing $N$ non-attacking queens on an $N \times
 
 Using the lattice propagator framework:
 - Each queen on file $i \in \{0, \dots, N-1\}$ is modeled as a [`Cell`](file:///home/doug/code/lattice-propagator/docs/api/primitives.md) holding a [`DiscreteDomain`](file:///home/doug/code/lattice-propagator/docs/api/lattice.md) of allowable ranks $\{0, \dots, N-1\}$.
-- Row uniqueness is maintained globally via [`AllDifferentPropagator`](file:///home/doug/code/lattice-propagator/docs/api/primitives.md).
+- Row uniqueness is maintained globally via [`AllDistinctPropagator`](file:///home/doug/code/lattice-propagator/docs/api/primitives.md) (Régin's Generalized Arc Consistency via bipartite matching).
 - Diagonal non-attack conditions are maintained via pairwise diagonal distance propagators.
 - Search is coordinated by [`ChoiceEngine`](file:///home/doug/code/lattice-propagator/docs/api/primitives.md) with First-Fail / MRV (Minimum Remaining Values) branching.
 
@@ -21,6 +21,7 @@ Using the lattice propagator framework:
 ```python
 from lattice_propagator import (
     AllDifferentPropagator,
+    AllDistinctPropagator,
     Cell,
     ChoiceEngine,
     Contradiction,
@@ -69,8 +70,8 @@ def solve_n_queens(n: int = 8) -> list[int]:
     net = PropagatorNetwork(f"{n}Queens")
     queens = [net.add_cell(f"Q_{i}", DiscreteDomain.range(0, n)) for i in range(n)]
 
-    # 1. Global Row Uniqueness
-    net.add_propagator(AllDifferentPropagator("AllDiffRows", queens))
+    # 1. Global Row Uniqueness (Generalized Arc Consistency via bipartite matching)
+    net.add_propagator(AllDistinctPropagator("AllDistinctRows", queens))
 
     # 2. Pairwise Diagonal Constraints
     for i in range(n):

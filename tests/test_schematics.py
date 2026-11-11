@@ -1,8 +1,14 @@
 """Test suite for circuit schematic generation using schemdraw."""
 
+import sys
 from pathlib import Path
 
-from lattice_propagator.schematics import generate_wheatstone_bridge, main
+REPO_ROOT = Path(__file__).resolve().parent.parent
+SCRIPTS_DIR = REPO_ROOT / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
+from schematics import generate_wheatstone_bridge, main
 
 
 def test_generate_wheatstone_bridge_svg(tmp_path: Path) -> None:

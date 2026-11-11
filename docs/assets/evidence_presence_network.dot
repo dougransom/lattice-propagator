@@ -5,13 +5,13 @@ digraph "SpatialPresence" {
 
   C_car_garage [label="car_garage\n⊥", shape=box, style="filled,dashed", fillcolor="#f8f9fa", color="#adb5bd"];
   C_conflict_k [label="conflict_k\n0.792", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
-  C_fused_presence [label="fused_presence\nBeliefMass({A}: 0.952, {K, L}: 0.038, {A, B, K, L}: 0.010)", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
+  C_fused_presence [label="fused_presence\nBeliefMass({A}: 0.95, {K, L}: 0.04, {A, B, K, L}: 0.01)", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
   C_is_home [label="is_home\nFalse", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
   C_light_bathroom [label="light_bathroom\nFalse", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
   C_living_kitchen_mode [label="living_kitchen_mode\nALL_OFF", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
-  C_moto_garage [label="moto_garage\nBeliefMass({A}: 0.990, {A, B, K, L}: 0.010)", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
-  C_phone_proxy2 [label="phone_proxy2\nBeliefMass({K, L}: 0.800, {A, B, K, L}: 0.200)", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
-  C_watch_proxy2 [label="watch_proxy2\nBeliefMass({A, B, K, L}: 1.000)", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
+  C_moto_garage [label="moto_garage\nBeliefMass({A}: 0.99, {A, B, K, L}: 0.01)", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
+  C_phone_proxy2 [label="phone_proxy2\nBeliefMass({K, L}: 0.80, {A, B, K, L}: 0.20)", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
+  C_watch_proxy2 [label="watch_proxy2\nBeliefMass({A, B, K, L}: 1.00)", shape=box, style="filled,rounded", fillcolor="#edf2f7", color="#4a5568"];
   P_BathDecision [label="BathDecision", shape=component, style=filled, fillcolor="#f7fafc", color="#2d3748"];
   P_DS_PresenceCombiner [label="DS_PresenceCombiner", shape=component, style=filled, fillcolor="#f7fafc", color="#2d3748"];
   P_HomeDecision [label="HomeDecision", shape=component, style=filled, fillcolor="#f7fafc", color="#2d3748"];

@@ -15,7 +15,7 @@ Each distinct letter represents a unique decimal digit $d \in \{0, \dots, 9\}$. 
 ## 1. Mathematical Formulation
 
 The problem combines two classes of constraints:
-1. **Global Uniqueness:** [`AllDifferentPropagator`](file:///home/doug/code/lattice-propagator/docs/api/primitives.md) across all 8 letters $\{S, E, N, D, M, O, R, Y\}$.
+1. **Global Uniqueness:** [`AllDistinctPropagator`](file:///home/doug/code/lattice-propagator/docs/api/primitives.md) (or [`AllDifferentPropagator`](file:///home/doug/code/lattice-propagator/docs/api/primitives.md)) across all 8 letters $\{S, E, N, D, M, O, R, Y\}$.
 2. **Column Additions with Carry Chain:**
    - Units: $D + E = Y + 10 \times C_1$, with carry $C_1 \in \{0, 1\}$.
    - Tens: $N + R + C_1 = E + 10 \times C_2$, with carry $C_2 \in \{0, 1\}$.
@@ -32,6 +32,7 @@ import itertools
 
 from lattice_propagator import (
     AllDifferentPropagator,
+    AllDistinctPropagator,
     Cell,
     ChoiceEngine,
     Contradiction,
@@ -107,8 +108,8 @@ letter_cells = {ch: net.add_cell(ch, DiscreteDomain.range(0, 10)) for ch in lett
 letter_cells["S"].set_value(DiscreteDomain.range(1, 10), overwrite=True)
 letter_cells["M"].set_value(DiscreteDomain.single(1), overwrite=True)
 
-# Uniqueness constraint
-net.add_propagator(AllDifferentPropagator("AllDiffDigits", list(letter_cells.values())))
+# Uniqueness constraint (Régin's GAC via bipartite matching)
+net.add_propagator(AllDistinctPropagator("AllDistinctDigits", list(letter_cells.values())))
 
 # Carry cells
 c1 = net.add_cell("C1", DiscreteDomain({0, 1}))

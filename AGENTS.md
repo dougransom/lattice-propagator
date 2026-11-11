@@ -56,6 +56,12 @@ When writing or adding examples, docstrings, or markdown documentation:
   - Logic & arrows: `→`, `⇒`, `⟺`, `∩`, `∪`.
   - Units & symbols: `°C`, `μ`, `σ`.
 
+### Rule 7: Idiomatic Python Collections & Reduction Trees
+When designing or implementing collection patterns over cells:
+- **Do NOT introduce redundant `map_cells` / element-wise wrappers:** Rely on idiomatic Python list/dict comprehensions combined with `Cell` operator overloading (e.g. `[x * 2 for x in cells]`). `_build_binary_op` / `build_binary_op` already auto-synthesizes intermediate cells and wires multi-directional constraints seamlessly.
+- **Prefer tree-structured reductions over linear chains:** Standard `sum(cells)` or `functools.reduce()` creates a degenerate $O(N)$ depth chain of propagators. When aggregating collections of cells, prefer balanced binary reduction trees (`tree_reduce` / `tree_sum`) with $O(\log N)$ propagation depth to minimize worklist queue churn and backward deduction latency.
+- **Dynamic/deferred collections:** When a collection of elements is unknown at network construction time (e.g. held inside a cell as a `SetLattice` or list), use `DelayedPropagator` to unroll the sub-network dynamically once the collection is populated.
+
 ---
 
 ## 3. Standard Developer Commands

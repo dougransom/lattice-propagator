@@ -56,22 +56,38 @@ lattice-dev test --cov
 
 ---
 
-## 4. Documentation Development
+## 4. Documentation Development & Automated Deployment
 
-Documentation is written in Markdown under the `docs/` directory and built with **MkDocs Material** and **`mkdocstrings`**:
+Documentation is written in Markdown under the `docs/` directory and built with **MkDocs Material** and **`mkdocstrings`**.
+
+### Local Preview (Live Server)
+To browse and edit documentation locally with live hot-reloading:
 
 ```bash
 # Start live reload preview server
 lattice-dev docs-serve
+# or
+./scripts/dev.sh docs-serve
 ```
 
-Open [http://127.0.0.1:8000](http://127.0.0.1:8000) in your browser. As you edit markdown files in `docs/` or docstrings in `src/lattice_propagator/`, the page will reload automatically.
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000) in your browser. As you edit markdown files in `docs/` or docstrings in `src/lattice_propagator/`, the browser will update automatically.
 
-To test building production static assets (verifying broken links and docstring formatting):
+### Local Static Build
+To build the static HTML site locally without running a background server:
 
 ```bash
 lattice-dev docs-build
+# or
+./scripts/dev.sh docs-build
 ```
+
+This compiles all documentation, extracts docstrings, and outputs static HTML into the `site/` folder. You can view it offline by opening `site/index.html` in any web browser.
+
+### Automated Deployment to GitHub Pages
+Every release tag (e.g., `v0.1.0`) and merge to the `main` branch automatically triggers the [`.github/workflows/docs.yml`](https://github.com/dougransom/lattice-propagator/blob/main/.github/workflows/docs.yml) workflow:
+1. Installs the environment and dev dependencies via `uv`.
+2. Executes `mkdocs build --strict` to verify zero broken links or syntax errors.
+3. Automatically deploys the site artifact to **GitHub Pages** at [https://dougransom.github.io/lattice-propagator/](https://dougransom.github.io/lattice-propagator/).
 
 ---
 

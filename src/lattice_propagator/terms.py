@@ -11,7 +11,7 @@ Provides:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 
 from .lattice import (
     Bottom,
@@ -80,7 +80,12 @@ class Term:
 class TermValue(LatticeValue):
     """Lattice value wrapping a first-order symbolic `Term`."""
 
+    category: ClassVar[str] = "value"
     term: Term
+
+    def format_display(self, unit: str = "", precision: int = 2) -> str:
+        """Format symbolic term for graph visualization."""
+        return f"{self.term}{unit}"
 
     def __repr__(self) -> str:
         return f"TermValue({self.term!r})"

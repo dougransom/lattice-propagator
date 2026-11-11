@@ -132,6 +132,14 @@ class Cell:
         if propagator not in root.propagators:
             root.propagators.append(propagator)
 
+    def remove_propagator(self, propagator: Propagator) -> None:
+        """Unregister a propagator observing this cell or its canonical representative."""
+        root = self._find()
+        if propagator in root.propagators:
+            root.propagators.remove(propagator)
+        if propagator in self.propagators:
+            self.propagators.remove(propagator)
+
     def unify(self, other: Cell) -> None:
         """Unify this cell with another cell using Disjoint Set Union (Union-Find).
 
@@ -860,17 +868,49 @@ _UNARY_OPS: dict[str, tuple[str, type[Propagator]]] = {}
 def register_binary_op(
     op: str, symbol: str, prop_cls: type[Propagator], inverted: bool = False
 ) -> None:
-    """Register a custom binary operator for Cell dunder method dispatch."""
+    """Register a custom binary operator for Cell dunder method dispatch.
+
+    Allows extending `Cell` arithmetic and relational expressions (e.g. `+`, `-`, `*`, `/`)
+    with custom multi-directional or directed propagator classes.
+
+    Args:
+        op: Operator key name (e.g. 'add', 'sub', 'mul', 'div', 'pow').
+        symbol: String representation for synthesized cell names (e.g. '+', '-', '**').
+        prop_cls: Propagator class to instantiate connecting operands and result.
+        inverted: If True, args are passed as `(out, right, left)` to invert
+            the relation (e.g. subtraction using `AdderPropagator`). If False,
+            args are passed as `(left, right, out)`.
+    """
     _BINARY_OPS[op] = (symbol, prop_cls, inverted)
 
 
 def register_unary_op(op: str, symbol: str, prop_cls: type[Propagator]) -> None:
-    """Register a custom unary operator for Cell dunder method dispatch."""
+    """Register a custom unary operator for Cell dunder method dispatch.
+
+    Args:
+        op: Operator key name (e.g. 'neg', 'abs', 'invert').
+        symbol: String representation for synthesized cell names (e.g. '-', '~').
+        prop_cls: Propagator class to instantiate connecting operand and result.
+    """
     _UNARY_OPS[op] = (symbol, prop_cls)
 
 
-def _build_unary_op(operand: Cell, op: str) -> Cell:
-    """Build a unary operator cell using declarative dispatch."""
+def build_unary_op(operand: Cell, op: str) -> Cell:
+    """Build a unary operator cell using declarative dispatch.
+
+    Synthesizes an intermediate output cell and wires a corresponding unary
+    propagator connecting operand to output.
+
+    Args:
+        operand: The input Cell.
+        op: Operator key registered in `_UNARY_OPS`.
+
+    Returns:
+        The newly synthesized result Cell.
+
+    Raises:
+        ValueError: If `op` is not registered.
+    """
     spec = _UNARY_OPS.get(op)
     if spec is None:
         supported = ", ".join(repr(k) for k in _UNARY_OPS)
@@ -884,8 +924,35 @@ def _build_unary_op(operand: Cell, op: str) -> Cell:
     return out
 
 
-def _build_binary_op(left: Any, right: Any, op: str) -> Cell:
-    """Build a binary arithmetic operator cell using declarative dispatch."""
+_build_unary_op = build_unary_op
+
+
+def build_binary_op(left: Any, right: Any, op: str) -> Cell:
+    """Build a binary arithmetic operator cell using declarative dispatch.
+
+    Expression Functionalization:
+    Transforms infix Python operator expressions (such as `a + b`, `a * b`, `a - b`)
+    into a reactive subnetwork of multi-directional propagators.
+    Coerces raw scalar values into constant cells, synthesizes an anonymous
+    intermediate result cell, and attaches the appropriate constraint propagator.
+
+    Directionality & Inverted Dispatch:
+    - Additive operations (`+`) wire `(left, right, out)` into `AdderPropagator(a, b, c)`.
+    - Subtractive operations (`-`) invert dispatch, wiring `(out, right, left)` so that
+      `out + right = left` without duplicating arithmetic constraint logic.
+    - Multiplicative operations (`*`, `/`) behave analogously via `MultiplierPropagator`.
+
+    Args:
+        left: Left operand (Cell or constant scalar).
+        right: Right operand (Cell or constant scalar).
+        op: Operator key ('add', 'sub', 'mul', 'div', or registered custom key).
+
+    Returns:
+        The newly synthesized result Cell in the shared network.
+
+    Raises:
+        ValueError: If `op` is not registered in `_BINARY_OPS`.
+    """
     spec = _BINARY_OPS.get(op)
     if spec is None:
         supported = ", ".join(repr(k) for k in _BINARY_OPS)
@@ -911,6 +978,75 @@ def _build_binary_op(left: Any, right: Any, op: str) -> Cell:
     p = prop_cls(f"{op}_{c_left.cell_id}_{c_right.cell_id}", *args)
     net.add_propagator(p)
     return out
+
+
+_build_binary_op = build_binary_op
+
+
+def tree_reduce(
+    op: str,
+    cells: Sequence[Cell | Any],
+    network: PropagatorNetwork | None = None,
+) -> Cell:
+    """Aggregate a sequence of cells using a balanced binary reduction tree.
+
+    Constructs a balanced binary tree of multi-directional propagators with
+    $O(\\log N)$ propagation depth, preventing the degenerate $O(N)$ depth chains
+    caused by standard linear reductions (e.g. `functools.reduce`). This minimizes
+    worklist churn, shortens causal dependency paths, and accelerates backward
+    deduction during constraint solving.
+
+    Args:
+        op: Binary operator key registered in `_BINARY_OPS` (e.g. 'add', 'mul').
+        cells: Sequence of Cells or coercible scalar values to aggregate.
+        network: Optional target network. If omitted, inferred from operand cells.
+
+    Returns:
+        The root Cell representing the reduced expression.
+
+    Raises:
+        ValueError: If `cells` is empty or `op` is not registered.
+    """
+    if not cells:
+        raise ValueError("Cannot reduce an empty sequence of cells.")
+
+    seq = list(cells)
+    if len(seq) == 1:
+        item = seq[0]
+        if isinstance(item, Cell):
+            return item
+        net = network or PropagatorNetwork()
+        return _coerce_to_cell(item, net, "operand")
+
+    if len(seq) == 2:
+        return build_binary_op(seq[0], seq[1], op)
+
+    mid = len(seq) // 2
+    left_root = tree_reduce(op, seq[:mid], network=network)
+    right_root = tree_reduce(op, seq[mid:], network=network)
+    return build_binary_op(left_root, right_root, op)
+
+
+def tree_sum(
+    cells: Sequence[Cell | Any],
+    network: PropagatorNetwork | None = None,
+) -> Cell:
+    """Sum a sequence of cells using a balanced binary reduction tree ($O(\\log N)$ depth).
+
+    Equivalent to `tree_reduce('add', cells, network=network)`. For an empty sequence,
+    returns a cell initialized with zero.
+
+    Args:
+        cells: Sequence of Cells or numbers to sum.
+        network: Optional PropagatorNetwork.
+
+    Returns:
+        The root Cell holding the balanced sum.
+    """
+    if not cells:
+        net = network or PropagatorNetwork()
+        return net.add_cell("zero", FlatValue(0))
+    return tree_reduce("add", cells, network=network)
 
 
 class SwitchPropagator(Propagator):
@@ -1207,7 +1343,26 @@ class ConditionalPropagator(Propagator):
 
 
 class FunctionalPropagator(Propagator):
-    """A generic propagator constructed by lifting an arbitrary pure function over cells."""
+    """A generic propagator constructed by lifting an arbitrary pure function over cells.
+
+    Directionality Clarification:
+        `FunctionalPropagator` is strictly **unidirectional** ($I \to O$).
+        Because arbitrary Python callables cannot be symbolically inverted at runtime,
+        information flows only forward from `inputs` to `output`.
+        If backward deduction or multidirectional constraint solving is needed,
+        use compound propagators (such as `AdderPropagator`, `MultiplierPropagator`,
+        or expressions built with `build_binary_op`), or use `FunctionalRelation`
+        with registered `.invert(...)` decorators.
+
+    Args:
+        name: Unique identifier for the propagator.
+        fn: Pure function transforming input `LatticeValue` instances into an output `LatticeValue`.
+        inputs: Sequence of input cells observed by this propagator.
+        output: Target cell into which function results are asserted.
+        overwrite: Whether repeated emissions overwrite previous assertions from this propagator.
+        confidence: TMS premise confidence factor in [0, 1].
+        is_assumption: Whether emitted deductions are defeasible hypotheses.
+    """
 
     def __init__(
         self,
@@ -1250,7 +1405,26 @@ def lift_propagator(
     confidence: float = 1.0,
     is_assumption: bool = False,
 ) -> FunctionalPropagator:
-    """Lift a function over lattice values into a reactive propagator."""
+    """Lift an arbitrary Python function over lattice values into a reactive propagator.
+
+    Directionality Note:
+        Primitive function lifting is strictly **unidirectional** ($I \to O$).
+        Information will only propagate forward from `inputs` to `output`.
+        For multi-directional relations, combine with `FunctionalRelation` or
+        use compound constraint propagators (`AdderPropagator`, `build_binary_op`).
+
+    Args:
+        name: Identifier for the created propagator.
+        fn: Callable taking input `LatticeValue`s and returning an output `LatticeValue`.
+        inputs: Sequence of upstream Cells.
+        output: Downstream target Cell.
+        overwrite: Whether to overwrite earlier assertions from this propagator.
+        confidence: Confidence level of asserted deductions.
+        is_assumption: Whether asserted premises are defeasible assumptions.
+
+    Returns:
+        The instantiated `FunctionalPropagator`.
+    """
     return FunctionalPropagator(
         name,
         fn,
@@ -1263,7 +1437,26 @@ def lift_propagator(
 
 
 class FunctionalRelation:
-    """Multi-directional or unidirectional functional constraint relation."""
+    """Multi-directional or unidirectional functional constraint relation.
+
+        Directionality & Inverse Wiring:
+            Unlike simple `lift_propagator`, `FunctionalRelation` enables full
+            **multi-directional deduction** across cell groups by allowing developers
+            to register reverse deduction paths via the `.invert(...)` decorator:
+
+            ```python
+            rel = FunctionalRelation(c_to_f, ["celsius"], ["fahrenheit"])
+
+
+            @rel.invert(["fahrenheit"], ["celsius"])
+            def f_to_c(f):
+                return (f - 32.0) * 5.0 / 9.0
+    ```
+
+            When attached to a network (`rel.attach(net)`), it instantiates directed
+            `FunctionalPropagator` instances for each configured direction, achieving
+            bidirectional or multi-directional constraint propagation.
+    """
 
     def __init__(
         self,
@@ -1340,6 +1533,162 @@ class FunctionalRelation:
             confidence=self.confidence,
         )
         network.add_propagator(p)
+
+
+class DelayedPropagator(Propagator):
+    """Dynamic delayed construction propagator with Truth Maintenance System retraction.
+
+    Observes a sequence of trigger cells. Defers instantiation of a subnetwork
+    until trigger cells are refined past `Bottom` (⊥) and satisfy an optional
+    condition. When triggers revert to `Bottom` or the condition is no longer met,
+    cleanly unhooks and deactivates all spawned child propagators, retracting
+    downstream deductions without leaving dead topology in the graph.
+
+    Theoretical Foundation:
+        - Sussman, G. J., & Radul, A. (2009). "The Art of the Propagator", Section 4: Dynamic Construction.
+          https://dspace.mit.edu/handle/1721.1/44215
+        - Hanson, C., & Sussman, G. J. (2021). "Software Design for Flexibility", Chapter 7.
+          https://mitpress.mit.edu/9780262045490/software-design-for-flexibility/
+
+    Args:
+        name: Unique identifier for this delayed propagator.
+        trigger_cells: Sequence of cells whose information refinement activates this constructor.
+        builder: Callable `(network, *trigger_cells) -> Sequence[Propagator] | None` invoked to
+            instantiate the subnetwork when trigger conditions are met.
+        condition: Optional predicate `(*trigger_values) -> bool`. If omitted, any non-`Bottom`
+            trigger state activates the builder.
+        retract_on_unmet: If True (default), deactivates and unhooks all spawned propagators
+            when trigger cells revert to `Bottom` or the condition evaluates to False.
+        confidence: TMS premise confidence factor in [0, 1].
+        is_assumption: Whether emitted deductions are defeasible hypotheses.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        trigger_cells: Sequence[Cell],
+        builder: Callable[..., Sequence[Propagator] | None],
+        condition: Callable[..., bool] | None = None,
+        retract_on_unmet: bool = True,
+        confidence: float = 1.0,
+        is_assumption: bool = False,
+    ) -> None:
+        super().__init__(
+            name,
+            inputs=list(trigger_cells),
+            outputs=[],
+            confidence=confidence,
+            is_assumption=is_assumption,
+        )
+        self.trigger_cells = list(trigger_cells)
+        self.builder = builder
+        self.condition = condition
+        self.retract_on_unmet = retract_on_unmet
+        self.spawned_propagators: list[Propagator] = []
+        self._activated: bool = False
+
+    def alert(self, network: PropagatorNetwork) -> None:
+        # Check if triggers are defined (not Bottom or Contradiction)
+        if any(isinstance(c.value, (Bottom, Contradiction)) for c in self.trigger_cells):
+            if self._activated and self.retract_on_unmet:
+                self.deactivate(network)
+            return
+
+        # Check condition predicate if specified
+        if self.condition is not None:
+            try:
+                cond_met = bool(self.condition(*(c.value for c in self.trigger_cells)))
+            except (TypeError, ValueError, ArithmeticError, AttributeError):
+                cond_met = False
+            if not cond_met:
+                if self._activated and self.retract_on_unmet:
+                    self.deactivate(network)
+                return
+
+        # Trigger condition is met -> unroll subnetwork if not already active
+        if not self._activated:
+            self._activated = True
+            existing_props = set(network.propagators)
+            res = self.builder(network, *self.trigger_cells)
+            new_props: list[Propagator] = []
+            if isinstance(res, Sequence):
+                for p in res:
+                    if isinstance(p, Propagator):
+                        new_props.append(p)
+                        network.add_propagator(p)
+            for p in network.propagators:
+                if p not in existing_props and p not in new_props:
+                    new_props.append(p)
+            self.spawned_propagators = new_props
+
+    def deactivate(self, network: PropagatorNetwork) -> None:
+        """Deactivate spawned subnetworks and unhook all created propagators."""
+        if not self._activated:
+            return
+        self._activated = False
+        for p in self.spawned_propagators:
+            network.remove_propagator(p)
+        self.spawned_propagators.clear()
+
+
+def delay_propagator(
+    name: str,
+    trigger_cells: Sequence[Cell],
+    builder: Callable[..., Sequence[Propagator] | None] | None = None,
+    condition: Callable[..., bool] | None = None,
+    retract_on_unmet: bool = True,
+) -> DelayedPropagator | Callable[[Callable[..., Sequence[Propagator] | None]], DelayedPropagator]:
+    """Create or decorate a delayed dynamic construction propagator.
+
+        Allows constructing subnetworks on demand once trigger cells provide sufficient information.
+
+        Usage as a standard function:
+            ```python
+            delayed = delay_propagator("sqrt_stage", [x, g], build_sqrt_stage, condition=is_not_done)
+    ```
+
+        Usage as a decorator:
+            ```python
+            @delay_propagator("sqrt_stage", [x, g], condition=is_not_done)
+            def build_sqrt_stage(net, x, g):
+                ...
+    ```
+
+        Args:
+            name: Name of the delayed propagator.
+            trigger_cells: Cells to monitor.
+            builder: Optional subnetwork builder callable `(net, *cells) -> Sequence[Propagator] | None`.
+            condition: Optional predicate function `(*values) -> bool`.
+            retract_on_unmet: Whether to retract and remove spawned propagators when condition fails.
+
+        Returns:
+            The instantiated `DelayedPropagator`, or a decorator returning it.
+    """
+    if builder is not None:
+        p = DelayedPropagator(
+            name,
+            trigger_cells,
+            builder,
+            condition=condition,
+            retract_on_unmet=retract_on_unmet,
+        )
+        if trigger_cells and trigger_cells[0].network is not None:
+            trigger_cells[0].network.add_propagator(p)
+        return p
+
+    def decorator(fn: Callable[..., Sequence[Propagator] | None]) -> DelayedPropagator:
+        p = DelayedPropagator(
+            name,
+            trigger_cells,
+            fn,
+            condition=condition,
+            retract_on_unmet=retract_on_unmet,
+        )
+        if trigger_cells and trigger_cells[0].network is not None:
+            trigger_cells[0].network.add_propagator(p)
+        return p
+
+    return decorator
 
 
 class RatePropagator(Propagator):
@@ -2223,6 +2572,394 @@ class AllDifferentPropagator(Propagator):
             self._deduce_hidden_singles()
 
 
+class AllDistinctPropagator(Propagator):
+    """Enforces Generalized Arc Consistency (GAC) over DiscreteDomain cells via maximum bipartite matching.
+
+    Implements Régin's filtering algorithm for difference constraints (Régin 1994,
+    equivalent to Prolog CLP(Z) `all_distinct/1`):
+    1. Maximum Bipartite Matching: Matches variables (cells) to candidate values.
+       If any cell cannot be matched, detects a Hall Marriage Theorem violation
+       and immediately signals Contradiction (⊤).
+    2. Strongly Connected Components (SCC) & Alternating Paths: Finds all edges
+       participating in at least one maximum matching via Tarjan's SCC and BFS
+       from unmatched values.
+    3. Global Pruning (Naked Tuples): Automatically eliminates naked pairs, triples,
+       and k-tuples from non-participating peer cells prior to search branching,
+       substantially shrinking search tree depth compared to pairwise `AllDifferentPropagator`.
+
+    Theoretical Foundation:
+        - Régin, J.-C. (1994). "A filtering algorithm for constraints of difference in CSPs",
+          AAAI-94, pp. 362-367. https://cdn.aaai.org/AAAI/1994/AAAI94-055.pdf
+        - Triska, M. (2012). "The Boolean Constraint Solver of SWI-Prolog / CLP(FD) & CLP(Z)".
+    """
+
+    def __init__(
+        self,
+        name: str,
+        cells: Sequence[Cell],
+        confidence: float = 1.0,
+        is_assumption: bool = False,
+    ) -> None:
+        cells_list = list(cells)
+        super().__init__(
+            name,
+            cells_list,
+            cells_list,
+            confidence=confidence,
+            is_assumption=is_assumption,
+        )
+        self.cells = cells_list
+
+    def alert(self, network: PropagatorNetwork) -> None:
+        """Filter domains using Régin's GAC bipartite matching algorithm."""
+        domains: dict[Cell, frozenset[Any]] = {}
+        for c in self.cells:
+            val = c.value
+            if isinstance(val, Contradiction):
+                return
+            if isinstance(val, DiscreteDomain):
+                if not val.candidates:
+                    c.set_value(
+                        Contradiction(reason=f"Exhausted domain in {self.name}"),
+                        source=self.name,
+                    )
+                    return
+                domains[c] = val.candidates
+            elif isinstance(val, FlatValue):
+                domains[c] = frozenset([val.val])
+            elif isinstance(val, Bottom):
+                return
+
+        # Check duplicate determined values early
+        determined: dict[Any, Cell] = {}
+        for c, cands in domains.items():
+            if len(cands) == 1:
+                v = next(iter(cands))
+                if v in determined:
+                    c.set_value(
+                        Contradiction(
+                            reason=f"Duplicate value {v} in {self.name} between {determined[v].cell_id} and {c.cell_id}",
+                            conflicting_values=(determined[v].value, c.value),
+                        ),
+                        source=self.name,
+                    )
+                    return
+                determined[v] = c
+
+        # Maximum Bipartite Matching (Augmenting Paths)
+        cell_nodes = list(domains.keys())
+        match_left: dict[Cell, Any] = {}
+        match_right: dict[Any, Cell] = {}
+
+        def dfs(curr: Cell, visited: set[Any]) -> bool:
+            for v in domains[curr]:
+                if v not in visited:
+                    visited.add(v)
+                    if v not in match_right or dfs(match_right[v], visited):
+                        match_left[curr] = v
+                        match_right[v] = curr
+                        return True
+            return False
+
+        for u in cell_nodes:
+            visited: set[Any] = set()
+            if not dfs(u, visited):
+                # Hall's condition violated: cannot match all variables
+                u.set_value(
+                    Contradiction(
+                        reason=f"AllDistinct Hall condition violation in {self.name}: {len(cell_nodes)} cells cannot be assigned to distinct candidates",
+                    ),
+                    source=self.name,
+                )
+                return
+
+        # Build directed graph DG for alternating cycles and paths
+        all_values: set[Any] = set()
+        for d in domains.values():
+            all_values.update(d)
+
+        adj: dict[Any, list[Any]] = {c: [] for c in cell_nodes}
+        for v in all_values:
+            adj[v] = []
+
+        for c in cell_nodes:
+            mv = match_left[c]
+            adj[c].append(mv)
+            for v in domains[c]:
+                if v != mv:
+                    adj[v].append(c)
+
+        # Reachability from unmatched / free values (alternating paths)
+        free_values = [v for v in all_values if v not in match_right]
+        reachable_from_free: set[Any] = set(free_values)
+        queue = list(free_values)
+        while queue:
+            curr = queue.pop(0)
+            for neighbor in adj.get(curr, []):
+                if neighbor not in reachable_from_free:
+                    reachable_from_free.add(neighbor)
+                    queue.append(neighbor)
+
+        # Tarjan's Strongly Connected Components (alternating cycles)
+        idx = 0
+        indices: dict[Any, int] = {}
+        lowlink: dict[Any, int] = {}
+        on_stack: set[Any] = set()
+        stack: list[Any] = []
+        scc: dict[Any, int] = {}
+        scc_count = 0
+
+        def strongconnect(node: Any) -> None:
+            nonlocal idx, scc_count
+            indices[node] = idx
+            lowlink[node] = idx
+            idx += 1
+            stack.append(node)
+            on_stack.add(node)
+
+            for w in adj.get(node, []):
+                if w not in indices:
+                    strongconnect(w)
+                    lowlink[node] = min(lowlink[node], lowlink[w])
+                elif w in on_stack:
+                    lowlink[node] = min(lowlink[node], indices[w])
+
+            if lowlink[node] == indices[node]:
+                while True:
+                    w = stack.pop()
+                    on_stack.remove(w)
+                    scc[w] = scc_count
+                    if w == node:
+                        break
+                scc_count += 1
+
+        for n in list(adj.keys()):
+            if n not in indices:
+                strongconnect(n)
+
+        # Prune unsupported domain values
+        for c in cell_nodes:
+            curr_cands = domains[c]
+            if len(curr_cands) <= 1:
+                continue
+            mv = match_left[c]
+            valid_cands = set()
+            for v in curr_cands:
+                if (
+                    v == mv
+                    or (c in reachable_from_free and v in reachable_from_free)
+                    or scc.get(c) == scc.get(v)
+                ):
+                    valid_cands.add(v)
+
+            if len(valid_cands) < len(curr_cands):
+                if not valid_cands:
+                    c.set_value(
+                        Contradiction(
+                            reason=f"Exhausted domain during AllDistinct filtering in {self.name}"
+                        ),
+                        source=self.name,
+                    )
+                    return
+                c.set_value(
+                    DiscreteDomain(candidates=frozenset(valid_cands)),
+                    source=self.name,
+                )
+
+
+class AllDistinctPropagator(Propagator):
+    """Enforces Generalized Arc Consistency (GAC) over DiscreteDomain cells via maximum bipartite matching.
+
+    Implements Régin's filtering algorithm for difference constraints (Régin 1994,
+    equivalent to Prolog CLP(Z) `all_distinct/1`):
+    1. Maximum Bipartite Matching: Matches variables (cells) to candidate values.
+       If any cell cannot be matched, detects a Hall Marriage Theorem violation
+       and immediately signals Contradiction (⊤).
+    2. Strongly Connected Components (SCC) & Alternating Paths: Finds all edges
+       participating in at least one maximum matching via Tarjan's SCC and BFS
+       from unmatched values.
+    3. Global Pruning (Naked Tuples): Automatically eliminates naked pairs, triples,
+       and k-tuples from non-participating peer cells prior to search branching,
+       substantially shrinking search tree depth compared to pairwise `AllDifferentPropagator`.
+
+    Theoretical Foundation:
+        - Régin, J.-C. (1994). "A filtering algorithm for constraints of difference in CSPs",
+          AAAI-94, pp. 362-367. https://cdn.aaai.org/AAAI/1994/AAAI94-055.pdf
+        - Triska, M. (2012). "The Boolean Constraint Solver of SWI-Prolog / CLP(FD) & CLP(Z)".
+    """
+
+    def __init__(
+        self,
+        name: str,
+        cells: Sequence[Cell],
+        confidence: float = 1.0,
+        is_assumption: bool = False,
+    ) -> None:
+        cells_list = list(cells)
+        super().__init__(
+            name,
+            cells_list,
+            cells_list,
+            confidence=confidence,
+            is_assumption=is_assumption,
+        )
+        self.cells = cells_list
+
+    def alert(self, network: PropagatorNetwork) -> None:
+        """Filter domains using Régin's GAC bipartite matching algorithm."""
+        domains: dict[Cell, frozenset[Any]] = {}
+        for c in self.cells:
+            val = c.value
+            if isinstance(val, Contradiction):
+                return
+            if isinstance(val, DiscreteDomain):
+                if not val.candidates:
+                    c.set_value(
+                        Contradiction(reason=f"Exhausted domain in {self.name}"),
+                        source=self.name,
+                    )
+                    return
+                domains[c] = val.candidates
+            elif isinstance(val, FlatValue):
+                domains[c] = frozenset([val.val])
+            elif isinstance(val, Bottom):
+                return
+
+        # Check duplicate determined values early
+        determined: dict[Any, Cell] = {}
+        for c, cands in domains.items():
+            if len(cands) == 1:
+                v = next(iter(cands))
+                if v in determined:
+                    c.set_value(
+                        Contradiction(
+                            reason=f"Duplicate value {v} in {self.name} between {determined[v].cell_id} and {c.cell_id}",
+                            conflicting_values=(determined[v].value, c.value),
+                        ),
+                        source=self.name,
+                    )
+                    return
+                determined[v] = c
+
+        # Maximum Bipartite Matching (Augmenting Paths)
+        cell_nodes = list(domains.keys())
+        match_left: dict[Cell, Any] = {}
+        match_right: dict[Any, Cell] = {}
+
+        def dfs(curr: Cell, visited: set[Any]) -> bool:
+            for v in domains[curr]:
+                if v not in visited:
+                    visited.add(v)
+                    if v not in match_right or dfs(match_right[v], visited):
+                        match_left[curr] = v
+                        match_right[v] = curr
+                        return True
+            return False
+
+        for u in cell_nodes:
+            visited: set[Any] = set()
+            if not dfs(u, visited):
+                # Hall's condition violated: cannot match all variables
+                u.set_value(
+                    Contradiction(
+                        reason=f"AllDistinct Hall condition violation in {self.name}: {len(cell_nodes)} cells cannot be assigned to distinct candidates",
+                    ),
+                    source=self.name,
+                )
+                return
+
+        # Build directed graph DG for alternating cycles and paths
+        all_values: set[Any] = set()
+        for d in domains.values():
+            all_values.update(d)
+
+        adj: dict[Any, list[Any]] = {c: [] for c in cell_nodes}
+        for v in all_values:
+            adj[v] = []
+
+        for c in cell_nodes:
+            mv = match_left[c]
+            adj[c].append(mv)
+            for v in domains[c]:
+                if v != mv:
+                    adj[v].append(c)
+
+        # Reachability from unmatched / free values (alternating paths)
+        free_values = [v for v in all_values if v not in match_right]
+        reachable_from_free: set[Any] = set(free_values)
+        queue = list(free_values)
+        while queue:
+            curr = queue.pop(0)
+            for neighbor in adj.get(curr, []):
+                if neighbor not in reachable_from_free:
+                    reachable_from_free.add(neighbor)
+                    queue.append(neighbor)
+
+        # Tarjan's Strongly Connected Components (alternating cycles)
+        idx = 0
+        indices: dict[Any, int] = {}
+        lowlink: dict[Any, int] = {}
+        on_stack: set[Any] = set()
+        stack: list[Any] = []
+        scc: dict[Any, int] = {}
+        scc_count = 0
+
+        def strongconnect(node: Any) -> None:
+            nonlocal idx, scc_count
+            indices[node] = idx
+            lowlink[node] = idx
+            idx += 1
+            stack.append(node)
+            on_stack.add(node)
+
+            for w in adj.get(node, []):
+                if w not in indices:
+                    strongconnect(w)
+                    lowlink[node] = min(lowlink[node], lowlink[w])
+                elif w in on_stack:
+                    lowlink[node] = min(lowlink[node], indices[w])
+
+            if lowlink[node] == indices[node]:
+                while True:
+                    w = stack.pop()
+                    on_stack.remove(w)
+                    scc[w] = scc_count
+                    if w == node:
+                        break
+                scc_count += 1
+
+        for n in list(adj.keys()):
+            if n not in indices:
+                strongconnect(n)
+
+        # Prune unsupported domain values
+        for c in cell_nodes:
+            curr_cands = domains[c]
+            if len(curr_cands) <= 1:
+                continue
+            mv = match_left[c]
+            valid_cands = set()
+            for v in curr_cands:
+                if (
+                    v == mv
+                    or (c in reachable_from_free and v in reachable_from_free)
+                    or scc.get(c) == scc.get(v)
+                ):
+                    valid_cands.add(v)
+
+            if len(valid_cands) < len(curr_cands):
+                if not valid_cands:
+                    c.set_value(
+                        Contradiction(reason=f"Exhausted domain during AllDistinct filtering in {self.name}"),
+                        source=self.name,
+                    )
+                    return
+                c.set_value(
+                    DiscreteDomain(candidates=frozenset(valid_cands)),
+                    source=self.name,
+                )
+
+
 class PropagatorNetwork:
     """Orchestrates cells and propagators, driving the network to fixed-point quiescence."""
 
@@ -2343,6 +3080,27 @@ class PropagatorNetwork:
         # Trigger initial run
         if propagator not in self._queue:
             self._queue.append(propagator)
+
+    def remove_propagator(self, propagator: Propagator) -> None:
+        """Unregister and remove a propagator from this network and its connected cells.
+
+        Unhooks the propagator from input and output cell listener lists, removes it
+        from the active worklist queue, and retracts any premises asserted by this
+        propagator on its output cells.
+
+        Args:
+            propagator: The Propagator instance to remove.
+        """
+        if propagator in self.propagators:
+            self.propagators.remove(propagator)
+        while propagator in self._queue:
+            self._queue.remove(propagator)
+
+        for c in propagator.inputs + propagator.outputs:
+            c.remove_propagator(propagator)
+
+        for out_cell in propagator.outputs:
+            out_cell.retract_source(propagator.name)
 
     def unify_cells(self, cell_a: Cell, cell_b: Cell) -> None:
         """Unify two cells into an equivalence class via Disjoint Set Union (Union-Find)."""

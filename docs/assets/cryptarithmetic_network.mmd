@@ -22,27 +22,27 @@ graph LR
   C_R["R<br/>{8}"]:::discrete
   C_S["S<br/>{9}"]:::discrete
   C_Y["Y<br/>{2}"]:::discrete
-  P_AllDiffDigits["AllDiffDigits"]:::propagator
+  P_AllDistinctDigits["AllDistinctDigits"]:::propagator
   P_Col0["Col0"]:::propagator
   P_Col1["Col1"]:::propagator
   P_Col2["Col2"]:::propagator
   P_Col3["Col3"]:::propagator
-  C_S --> P_AllDiffDigits
-  C_E --> P_AllDiffDigits
-  C_N --> P_AllDiffDigits
-  C_D --> P_AllDiffDigits
-  C_M --> P_AllDiffDigits
-  C_O --> P_AllDiffDigits
-  C_R --> P_AllDiffDigits
-  C_Y --> P_AllDiffDigits
-  P_AllDiffDigits --> C_S
-  P_AllDiffDigits --> C_E
-  P_AllDiffDigits --> C_N
-  P_AllDiffDigits --> C_D
-  P_AllDiffDigits --> C_M
-  P_AllDiffDigits --> C_O
-  P_AllDiffDigits --> C_R
-  P_AllDiffDigits --> C_Y
+  C_S --> P_AllDistinctDigits
+  C_E --> P_AllDistinctDigits
+  C_N --> P_AllDistinctDigits
+  C_D --> P_AllDistinctDigits
+  C_M --> P_AllDistinctDigits
+  C_O --> P_AllDistinctDigits
+  C_R --> P_AllDistinctDigits
+  C_Y --> P_AllDistinctDigits
+  P_AllDistinctDigits --> C_S
+  P_AllDistinctDigits --> C_E
+  P_AllDistinctDigits --> C_N
+  P_AllDistinctDigits --> C_D
+  P_AllDistinctDigits --> C_M
+  P_AllDistinctDigits --> C_O
+  P_AllDistinctDigits --> C_R
+  P_AllDistinctDigits --> C_Y
   C_D --> P_Col0
   C_E --> P_Col0
   C_Y --> P_Col0

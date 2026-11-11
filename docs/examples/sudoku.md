@@ -2,9 +2,11 @@
 
 Sudoku is a classic finite-domain constraint satisfaction problem:
 - 81 cells, each initialized with a domain of digits $\{1, \dots, 9\}$.
-- 27 [`AllDifferentPropagator`](file:///home/doug/code/lattice-propagator/docs/api/primitives.md) constraints: 9 rows, 9 columns, and 9 $3 \times 3$ boxes.
+- 27 uniqueness constraints: 9 rows, 9 columns, and 9 $3 \times 3$ boxes.
 
-Because [`AllDifferentPropagator`](file:///home/doug/code/lattice-propagator/docs/api/primitives.md) continuously performs **pairwise exclusion** and **hidden single elimination**, easy-to-medium puzzles are solved purely monotonically without any backtracking search!
+`lattice-propagator` provides two distinct uniqueness propagators:
+1. [`AllDifferentPropagator`](file:///home/doug/code/lattice-propagator/docs/api/primitives.md): Continuous **pairwise singleton exclusion** and **hidden single elimination**. Lightweight and fast for easy-to-medium puzzles.
+2. [`AllDistinctPropagator`](file:///home/doug/code/lattice-propagator/docs/api/primitives.md): Full **Generalized Arc Consistency (GAC)** (Régin 1994, analog to Prolog CLP(Z) `all_distinct/1`). Constructs an internal bipartite graph between cells and digit candidates, computes maximum matchings and strongly connected components (SCC), and prunes unfeasible candidates (such as naked pairs, triples, and $k$-tuples) *prior* to search branching. Hall condition violations are detected immediately as contradictions ($\top$).
 
 For difficult or diabolical puzzles where monotonic propagation reaches quiescence with undetermined candidates remaining, the lattice propagator framework supports **two complementary backtracking mechanisms**:
 1. **Chronological MRV Search ([`ChoiceEngine`](file:///home/doug/code/lattice-propagator/docs/api/primitives.md)):** Interleaves fixed-point propagation with Minimum Remaining Values (First-Fail) branching, saving cell states and restoring upon contradiction ($\top$).
@@ -19,6 +21,7 @@ When a puzzle cannot be resolved purely by monotonic forward pruning, [`ChoiceEn
 ```python
 from lattice_propagator import (
     AllDifferentPropagator,
+    AllDistinctPropagator,
     Cell,
     ChoiceEngine,
     DiscreteDomain,
@@ -26,23 +29,27 @@ from lattice_propagator import (
 )
 
 
-def build_sudoku_network(name: str = "Sudoku") -> tuple[PropagatorNetwork, list[list[Cell]]]:
+def build_sudoku_network(
+    name: str = "Sudoku",
+    use_all_distinct: bool = True,
+) -> tuple[PropagatorNetwork, list[list[Cell]]]:
     net = PropagatorNetwork(name)
     grid = [[net.add_cell(f"R{r + 1}C{c + 1}") for c in range(9)] for r in range(9)]
+    prop_cls = AllDistinctPropagator if use_all_distinct else AllDifferentPropagator
 
     # 9 Row Constraints
     for r in range(9):
-        net.add_propagator(AllDifferentPropagator(f"Row_{r + 1}", grid[r]))
+        net.add_propagator(prop_cls(f"Row_{r + 1}", grid[r]))
 
     # 9 Column Constraints
     for c in range(9):
-        net.add_propagator(AllDifferentPropagator(f"Col_{c + 1}", [grid[r][c] for r in range(9)]))
+        net.add_propagator(prop_cls(f"Col_{c + 1}", [grid[r][c] for r in range(9)]))
 
     # 9 3×3 Box Constraints
     for br in range(3):
         for bc in range(3):
             box_cells = [grid[br * 3 + r][bc * 3 + c] for r in range(3) for c in range(3)]
-            net.add_propagator(AllDifferentPropagator(f"Box_{br + 1}_{bc + 1}", box_cells))
+            net.add_propagator(prop_cls(f"Box_{br + 1}_{bc + 1}", box_cells))
 
     return net, grid
 

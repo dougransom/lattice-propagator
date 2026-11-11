@@ -72,6 +72,7 @@ nav:
       - Reactive Cells & Networks: concepts/networks.md
       - Truth Maintenance & Backtracking: concepts/tms.md
       - Dynamic Topology & π-Calculus: concepts/dynamic_topology.md
+      - Design Guidelines: concepts/design_guidelines.md
   - Applications in Building & Home Automation:
       - Overview: building_automation/index.md
       - Event Buses, Node-RED, π-Calculus & Propagators: building_automation/paradigms_and_pi_calculus.md
@@ -93,7 +94,9 @@ nav:
       - Wheatstone Bridge & Non-Linear Circuits: examples/wheatstone_bridge.md
       - Type Inference & Term Unification: examples/type_inference.md
       - Vehicle Localization & Degenerate Estimation: examples/degenerate_estimation.md
+      - Heron's Method & Dynamic Unrolling: examples/heron_sqrt.md
   - API Reference:
+      - Overview: api/index.md
       - lattice: api/lattice.md
       - primitives: api/primitives.md
       - boolean: api/boolean.md

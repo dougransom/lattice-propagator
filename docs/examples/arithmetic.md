@@ -2,6 +2,9 @@
 
 Propagator networks eliminate the need to write separate forward and inverse functions. An arithmetic relation $A + B = C$ or $A \times B = C$ automatically computes any unknown variable as soon as the other two become available.
 
+> [!NOTE] Prerequisites
+> This example builds on basic concepts introduced in the [Getting Started Guide](../getting_started.md).
+
 ---
 
 ## 1. Bidirectional Adder

@@ -262,21 +262,16 @@ for r1_k in E12_K:
         if not (50e-6 <= i_nom <= 250e-6):
             continue
 
-        # Build interval propagator network for this candidate pair:
+        # Build interval propagator network using operator overloading:
+        # I = Vs / (R1 + R2), Vb = I * R2
         net_bias = PropagatorNetwork(f"Bias_{int(r1_k)}k_{int(r2_k)}k")
         vs_cell = net_bias.add_cell("Vs", IntervalValue(4.75, 5.25), unit="V")
         r1_cell = net_bias.add_cell("R1", IntervalValue(r1, r1), unit="Ω")
         r2_cell = net_bias.add_cell("R2", IntervalValue(r2, r2), unit="Ω")
-        rtot_cell = net_bias.add_cell("Rtot", unit="Ω")
-        i_cell = net_bias.add_cell("I", unit="A")
-        vb_cell = net_bias.add_cell("Vb", unit="V")
 
-        # R_tot = R1 + R2
-        net_bias.add_propagator(AdderPropagator("R_Series", r1_cell, r2_cell, rtot_cell))
-        # Vs = I * R_tot
-        net_bias.add_propagator(MultiplierPropagator("Ohm_Total", i_cell, rtot_cell, vs_cell))
-        # Vb = I * R2
-        net_bias.add_propagator(MultiplierPropagator("Ohm_R2", i_cell, r2_cell, vb_cell))
+        rtot_cell = r1_cell + r2_cell
+        i_cell = vs_cell / rtot_cell
+        vb_cell = i_cell * r2_cell
 
         net_bias.run()
 
@@ -310,4 +305,43 @@ assert best_r1 == 68.0
 assert best_r2 == 27.0
 assert best_vb.min_val >= 1.20 and best_vb.max_val <= 1.60
 assert best_iq < 60.0  # Under 60 μA quiescent current
+```
+
+---
+
+## Problem 3: Multi-Resistor Series Ladder & Balanced Tree Summation (`tree_sum`)
+
+When calculating equivalent series resistance $R_{eq} = \sum_{i=1}^N R_i$ across large resistor chains or multi-stage filter ladders, chaining linear `AdderPropagator`s produces an $O(N)$ depth graph that suffers from worklist queue churn and backward deduction latency.
+
+[`tree_sum`](file:///home/doug/code/lattice-propagator/docs/api/primitives.md) builds a balanced binary reduction tree with $O(\log N)$ propagation depth, preserving bidirectional deduction across all intermediate taps:
+
+```python
+from lattice_propagator import (
+    Cell,
+    FlatValue,
+    PropagatorNetwork,
+    tree_sum,
+)
+
+net_ladder = PropagatorNetwork("ResistorLadder")
+
+# 8 resistors in series: 100 Ω each
+resistors = [net_ladder.add_cell(f"R{i + 1}", FlatValue(100.0), unit="Ω") for i in range(8)]
+
+# Balanced O(log N) binary reduction tree:
+r_eq = tree_sum(resistors, net_ladder)
+net_ladder.run()
+
+print(f"Equivalent Series Resistance: {r_eq.value.val:.1f} Ω")
+assert r_eq.value.val == 800.0
+
+# Backward deduction: if an unconstrained trim resistor is added and the total chain
+# is constrained to 1000 Ω, tree_sum deduces the required trim resistance backward:
+r_trim = net_ladder.add_cell("R_trim", unit="Ω")
+r_total = tree_sum([r_eq, r_trim], net_ladder)
+r_total.set_value(FlatValue(1000.0))
+net_ladder.run()
+
+print(f"Trim Resistor Deduced: {r_trim.value.val:.1f} Ω")
+assert r_trim.value.val == 200.0
 ```
