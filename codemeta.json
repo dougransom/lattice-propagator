@@ -1,12 +1,27 @@
 {
-  "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
+  "@context": "https://w3id.org/codemeta/3.0",
   "@type": "SoftwareSourceCode",
   "identifier": "lattice-propagator",
   "name": "lattice-propagator",
   "version": "0.0.1dev1",
   "description": "Monotonic constraint networks and sensor fusion over partial-information lattices",
   "license": "https://spdx.org/licenses/MIT",
+  "url": "https://dougransom.github.io/lattice-propagator/",
   "codeRepository": "https://github.com/dougransom/lattice-propagator",
+  "issueTracker": "https://github.com/dougransom/lattice-propagator/issues",
+  "readme": "https://github.com/dougransom/lattice-propagator/blob/main/README.md",
+  "softwareHelp": "https://dougransom.github.io/lattice-propagator/",
+  "applicationCategory": [
+    "Constraint Programming",
+    "Sensor Fusion",
+    "Scientific Computing"
+  ],
+  "developmentStatus": "active",
+  "operatingSystem": [
+    "Linux",
+    "macOS",
+    "Windows"
+  ],
   "programmingLanguage": "Python",
   "runtimePlatform": "Python 3.11+",
   "author": [
@@ -22,6 +37,16 @@
     "lattice",
     "partial-information",
     "constraints",
+    "constraint-programming",
+    "constraint-satisfaction",
+    "csp",
+    "clpz",
+    "clpfd",
+    "logic-programming",
+    "sat-solver",
+    "cdcl",
+    "unification",
+    "type-inference",
     "sensor-fusion",
     "home-assistant",
     "sussman",
@@ -39,7 +64,10 @@
     "mermaid",
     "graphviz",
     "reactive-programming",
-    "building-automation"
+    "building-automation",
+    "asyncio",
+    "zero-dependencies",
+    "pure-python"
   ],
   "citation": [
     "https://dspace.mit.edu/handle/1721.1/44215",

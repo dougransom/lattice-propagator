@@ -19,5 +19,6 @@ Information lattices, partial orders, and monotonic join/merge operations.
         - MapLattice
         - BeliefMassValue
         - DiscreteDomain
+        - IntegerDomain
         - coerce_to_lattice_value
         - merge_lattice

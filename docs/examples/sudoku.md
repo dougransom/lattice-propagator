@@ -94,7 +94,7 @@ engine = ChoiceEngine(net)
 print(f"Monotonic solve complete? {engine.is_solved()}")
 
 # 2. Interleaved search & backtracking
-solved = engine.solve()
+solved = engine.first_solution()
 print(f"ChoiceEngine solved? {solved}")
 print(render_unicode_grid(grid))
 assert solved

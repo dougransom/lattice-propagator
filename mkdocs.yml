@@ -66,6 +66,7 @@ plugins:
 nav:
   - Overview: index.md
   - Getting Started: getting_started.md
+  - Workstation & Agent Setup: workstation_setup.md
   - Requirements & Specification: requirements.md
   - Core Concepts:
       - The Information Semilattice: concepts/lattices.md
@@ -85,12 +86,14 @@ nav:
       - Cryptarithmetic (SEND+MORE=MONEY): examples/cryptarithmetic.md
       - Circuit Fault Diagnosis & TMS: examples/circuit_diagnosis.md
       - N-Queens Constraint Search: examples/n_queens.md
+      - Map Colouring (Propagation + Labeling): examples/map_colouring.md
       - Bidirectional Resistor Networks: examples/resistor_network.md
       - Kinematic Reachability Envelopes: examples/kinematics.md
       - Time-of-Day Circular Intervals: examples/clock_intervals.md
       - Signal Trajectories & Curve Generation: examples/trajectories.md
       - Dynamic EV Power Routing & π-Mobility: examples/dynamic_power_routing.md
       - CDCL SAT Solver via Two-Watched-Literals: examples/sat_solver.md
+      - CLP(Z) Unbounded Integer Constraints: examples/clpz_integers.md
       - Wheatstone Bridge & Non-Linear Circuits: examples/wheatstone_bridge.md
       - Type Inference & Term Unification: examples/type_inference.md
       - Vehicle Localization & Degenerate Estimation: examples/degenerate_estimation.md
@@ -100,6 +103,7 @@ nav:
       - lattice: api/lattice.md
       - primitives: api/primitives.md
       - boolean: api/boolean.md
+      - clpz: api/clpz.md
       - nonlinear: api/nonlinear.md
       - terms: api/terms.md
       - degenerate: api/degenerate.md

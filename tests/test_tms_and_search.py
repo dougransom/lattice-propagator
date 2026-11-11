@@ -157,7 +157,7 @@ def test_choice_engine_interleaved_search():
     x4.set_value(DiscreteDomain.single(4), overwrite=True)
 
     engine = ChoiceEngine(net)
-    success = engine.solve()
+    success = engine.first_solution()
 
     assert success is True
     assert engine.is_solved()
@@ -166,6 +166,28 @@ def test_choice_engine_interleaved_search():
     vals = [x1.value.value, x2.value.value, x3.value.value, x4.value.value]
     assert set(vals) == {1, 2, 3, 4}
     assert vals[3] == 4
+
+
+def test_choice_engine_enumerates_multiple_solutions():
+    """Verify iter_solutions and all_solutions find all distinct valid assignments."""
+    net = PropagatorNetwork("MultiChoiceNet")
+    x1 = net.add_cell("X1", DiscreteDomain({1, 2}))
+    x2 = net.add_cell("X2", DiscreteDomain({1, 2}))
+    x3 = net.add_cell("X3", DiscreteDomain({1, 2, 3}))
+    net.add_propagator(AllDifferentPropagator("AllDiff", [x1, x2, x3]))
+
+    engine = ChoiceEngine(net, variables=[x1, x2, x3])
+    solutions = engine.all_solutions()
+
+    # X1 in {1,2}, X2 in {1,2} -> 2 permutations; X3 is forced to 3 in both
+    assert len(solutions) == 2
+    tuples = {(s["X1"].value, s["X2"].value, s["X3"].value) for s in solutions}
+    assert tuples == {(1, 2, 3), (2, 1, 3)}
+
+    # Limited enumeration stops lazily
+    limited = engine.all_solutions(limit=1)
+    assert len(limited) == 1
+    assert engine.all_solutions(limit=0) == []
 
 
 def test_choice_engine_detects_unsolvable():
@@ -179,5 +201,6 @@ def test_choice_engine_detects_unsolvable():
     net.add_propagator(AllDifferentPropagator("Pigeonhole", [a, b, c]))
 
     engine = ChoiceEngine(net)
-    success = engine.solve()
+    success = engine.first_solution()
     assert success is False
+    assert engine.all_solutions() == []

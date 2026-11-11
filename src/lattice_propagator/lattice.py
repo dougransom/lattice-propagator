@@ -17,8 +17,9 @@ Implements mathematical partial orders:
 
 from __future__ import annotations
 
+import bisect
 import math
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
@@ -448,6 +449,270 @@ class DiscreteDomain(LatticeValue):
         return f"Discrete{{{', '.join(map(str, sorted_cands))}}}"
 
 
+IntBound = int | float
+
+
+def _validate_int_bound(val: Any, role: str) -> IntBound:
+    """Validate that a bound is a finite int or ±math.inf (rejecting bool and NaN)."""
+    if isinstance(val, bool):
+        raise TypeError(f"{role} cannot be a bool, got {val!r}")
+    if isinstance(val, int):
+        return val
+    if isinstance(val, float) and math.isinf(val):
+        return val
+    raise TypeError(f"{role} must be int or ±math.inf, got {val!r}")
+
+
+def _normalize_int_ranges(
+    ranges: Iterable[tuple[IntBound, IntBound]],
+) -> tuple[tuple[IntBound, IntBound], ...]:
+    """Sort, validate, and coalesce overlapping or adjacent integer intervals."""
+    valid: list[tuple[IntBound, IntBound]] = []
+    for raw_lo, raw_hi in ranges:
+        lo = _validate_int_bound(raw_lo, "lower bound")
+        hi = _validate_int_bound(raw_hi, "upper bound")
+        if lo == math.inf:
+            raise ValueError("Lower bound cannot be +inf")
+        if hi == -math.inf:
+            raise ValueError("Upper bound cannot be -inf")
+        if lo <= hi:
+            valid.append((lo, hi))
+    if not valid:
+        raise ValueError("IntegerDomain ranges cannot be empty")
+    valid.sort(key=lambda seg: (seg[0], seg[1]))
+    merged: list[tuple[IntBound, IntBound]] = [valid[0]]
+    for lo, hi in valid[1:]:
+        prev_lo, prev_hi = merged[-1]
+        if prev_hi == math.inf or lo <= prev_hi + 1:
+            merged[-1] = (prev_lo, max(prev_hi, hi))
+        else:
+            merged.append((lo, hi))
+    return tuple(merged)
+
+
+def _intersect_int_ranges(
+    a_ranges: tuple[tuple[IntBound, IntBound], ...],
+    b_ranges: tuple[tuple[IntBound, IntBound], ...],
+) -> tuple[tuple[IntBound, IntBound], ...]:
+    """Compute canonical intersection of two sorted disjoint integer range tuples."""
+    out: list[tuple[IntBound, IntBound]] = []
+    i = j = 0
+    while i < len(a_ranges) and j < len(b_ranges):
+        a_lo, a_hi = a_ranges[i]
+        b_lo, b_hi = b_ranges[j]
+        lo = max(a_lo, b_lo)
+        hi = min(a_hi, b_hi)
+        if lo <= hi:
+            out.append((lo, hi))
+        if a_hi < b_hi:
+            i += 1
+        elif b_hi < a_hi:
+            j += 1
+        else:
+            i += 1
+            j += 1
+    return tuple(out)
+
+
+def _format_int_bound(b: IntBound) -> str:
+    """Format an integer or infinite bound using mathematical Unicode."""
+    if b == -math.inf:
+        return "-∞"
+    if b == math.inf:
+        return "+∞"
+    return str(b)
+
+
+@dataclass(frozen=True)
+class IntegerDomain(LatticeValue):
+    """Disjoint sorted union of closed integer intervals over ℤ ∪ {−∞, +∞}.
+
+    Models CLP(Z)-style integer domains starting from the unconstrained
+    universe ``(-∞ .. +∞)`` and monotonically refining through interval
+    intersection, gap removal (``!=``), and bounds propagation.
+
+    Attributes:
+        ranges: Canonical sorted tuple of disjoint, non-adjacent closed
+            intervals ``(lo, hi)`` where ``lo`` is ``int | -inf`` and ``hi``
+            is ``int | +inf``.
+    """
+
+    category: ClassVar[str] = "discrete"
+    ranges: tuple[tuple[IntBound, IntBound], ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "ranges", _normalize_int_ranges(self.ranges))
+
+    @classmethod
+    def unbounded(cls) -> IntegerDomain:
+        """Create the unconstrained integer universe ``(-∞ .. +∞)``."""
+        return cls(ranges=((-math.inf, math.inf),))
+
+    @classmethod
+    def between(cls, lo: IntBound, hi: IntBound) -> IntegerDomain:
+        """Create a single closed integer interval ``[lo .. hi]``."""
+        return cls(ranges=((lo, hi),))
+
+    @classmethod
+    def single(cls, val: int) -> IntegerDomain:
+        """Create a determined singleton integer domain ``{val}``."""
+        if isinstance(val, bool) or not isinstance(val, int):
+            raise TypeError(f"IntegerDomain.single requires an int, got {val!r}")
+        return cls(ranges=((val, val),))
+
+    @classmethod
+    def at_least(cls, lo: int) -> IntegerDomain:
+        """Create a lower-bounded semi-infinite domain ``[lo .. +∞)``."""
+        return cls(ranges=((lo, math.inf),))
+
+    @classmethod
+    def at_most(cls, hi: int) -> IntegerDomain:
+        """Create an upper-bounded semi-infinite domain ``(-∞ .. hi]``."""
+        return cls(ranges=((-math.inf, hi),))
+
+    @classmethod
+    def from_values(cls, values: Iterable[int]) -> IntegerDomain:
+        """Create an IntegerDomain coalescing an arbitrary iterable of integers."""
+        segs: list[tuple[IntBound, IntBound]] = []
+        for v in values:
+            if isinstance(v, bool) or not isinstance(v, int):
+                raise TypeError(f"Expected int element, got {v!r}")
+            segs.append((v, v))
+        return cls(ranges=tuple(segs))
+
+    @property
+    def lo(self) -> IntBound:
+        """Minimum value (or ``-inf``) in this integer domain."""
+        return self.ranges[0][0]
+
+    @property
+    def hi(self) -> IntBound:
+        """Maximum value (or ``+inf``) in this integer domain."""
+        return self.ranges[-1][1]
+
+    @property
+    def is_bounded(self) -> bool:
+        """Return True if both lower and upper bounds are finite."""
+        return not math.isinf(self.lo) and not math.isinf(self.hi)
+
+    @property
+    def is_determined(self) -> bool:
+        """Return True if the domain has collapsed to a single unique integer."""
+        return len(self.ranges) == 1 and self.ranges[0][0] == self.ranges[0][1]
+
+    @property
+    def value(self) -> int | None:
+        """Return the unique integer value if determined, else None."""
+        return int(self.ranges[0][0]) if self.is_determined else None
+
+    @property
+    def size(self) -> int | float:
+        """Return the number of integers in the domain (or ``math.inf`` if unbounded)."""
+        if not self.is_bounded:
+            return math.inf
+        return sum(int(hi) - int(lo) + 1 for lo, hi in self.ranges)
+
+    def contains(self, item: Any) -> bool:
+        """Check whether an integer lies inside this domain."""
+        if isinstance(item, bool) or not isinstance(item, int):
+            return False
+        starts = [seg[0] for seg in self.ranges]
+        idx = bisect.bisect_right(starts, item) - 1
+        return idx >= 0 and self.ranges[idx][0] <= item <= self.ranges[idx][1]
+
+    def iter_values(self) -> Iterator[int]:
+        """Yield all integers in ascending order (requires finite bounds)."""
+        if not self.is_bounded:
+            raise ValueError("Cannot iterate over an unbounded IntegerDomain")
+        for lo, hi in self.ranges:
+            yield from range(int(lo), int(hi) + 1)
+
+    def intersect(self, other: IntegerDomain) -> IntegerDomain | Contradiction:
+        """Return the monotonic intersection of this domain with ``other``."""
+        merged = _intersect_int_ranges(self.ranges, other.ranges)
+        if not merged:
+            return Contradiction(
+                reason=f"Empty integer domain intersection between {self} and {other}",
+                conflicting_values=(self, other),
+            )
+        return IntegerDomain(ranges=merged)
+
+    def union(self, other: IntegerDomain) -> IntegerDomain:
+        """Return the smallest IntegerDomain containing both ``self`` and ``other``."""
+        return IntegerDomain(ranges=(*self.ranges, *other.ranges))
+
+    def clamp(self, lo: IntBound, hi: IntBound) -> IntegerDomain | Contradiction:
+        """Restrict this domain to the closed integer range ``[lo .. hi]``."""
+        lo_v = _validate_int_bound(lo, "lower bound")
+        hi_v = _validate_int_bound(hi, "upper bound")
+        if lo_v > hi_v or lo_v == math.inf or hi_v == -math.inf:
+            return Contradiction(
+                reason=f"Empty integer clamp [{_format_int_bound(lo_v)}..{_format_int_bound(hi_v)}]",
+                conflicting_values=(self,),
+            )
+        return self.intersect(IntegerDomain.between(lo_v, hi_v))
+
+    def without(self, val: int) -> IntegerDomain | Contradiction:
+        """Remove a single integer ``val`` from this domain (used by ``!=``)."""
+        if isinstance(val, bool) or not isinstance(val, int):
+            raise TypeError(f"without() requires a finite int, got {val!r}")
+        new_ranges: list[tuple[IntBound, IntBound]] = []
+        for lo, hi in self.ranges:
+            if lo <= val <= hi:
+                if lo <= val - 1:
+                    new_ranges.append((lo, val - 1))
+                if val + 1 <= hi:
+                    new_ranges.append((val + 1, hi))
+            else:
+                new_ranges.append((lo, hi))
+        if not new_ranges:
+            return Contradiction(
+                reason=f"Integer domain exhausted after removing {val} from {self}",
+                conflicting_values=(self,),
+            )
+        return IntegerDomain(ranges=tuple(new_ranges))
+
+    def complement(self) -> IntegerDomain | Contradiction:
+        """Return the complement ``ℤ \\ self`` over the integers."""
+        out: list[tuple[IntBound, IntBound]] = []
+        cursor: IntBound = -math.inf
+        for lo, hi in self.ranges:
+            if cursor < lo:
+                out.append((cursor, int(lo) - 1))
+            if hi == math.inf:
+                cursor = math.inf
+                break
+            cursor = int(hi) + 1
+        if cursor != math.inf:
+            out.append((cursor, math.inf))
+        if not out:
+            return Contradiction(
+                reason=f"Empty complement of full integer domain {self}",
+                conflicting_values=(self,),
+            )
+        return IntegerDomain(ranges=tuple(out))
+
+    def _format_segments(self) -> str:
+        parts = [
+            _format_int_bound(lo)
+            if lo == hi
+            else f"[{_format_int_bound(lo)}..{_format_int_bound(hi)}]"
+            for lo, hi in self.ranges
+        ]
+        return " ∪ ".join(parts)
+
+    def format_display(self, unit: str = "", precision: int = 2) -> str:
+        """Format integer domain with rich mathematical Unicode for graph nodes."""
+        if self.is_determined:
+            return f"ℤ{{{self.value}}}{unit}"
+        return f"{self._format_segments()}{unit}"
+
+    def __repr__(self) -> str:
+        if self.is_determined:
+            return f"Int({self.value})"
+        return f"ℤ({self._format_segments()})"
+
+
 @dataclass(frozen=True)
 class FlatValue(LatticeValue):
     """A flat lattice value wrapping any scalar/immutable value (bool, str, int, float, enum).
@@ -805,6 +1070,11 @@ def _merge_discrete_domains(a: DiscreteDomain, b: DiscreteDomain) -> LatticeValu
     return DiscreteDomain(candidates=new_candidates)
 
 
+def _merge_integer_domains(a: IntegerDomain, b: IntegerDomain) -> LatticeValue:
+    """Compute monotonic interval-set intersection of two integer domains."""
+    return a.intersect(b)
+
+
 def _merge_flat_values(a: FlatValue, b: FlatValue) -> LatticeValue:
     """Compute monotonic join of two flat scalar values."""
     if a.val == b.val:
@@ -848,6 +1118,7 @@ MERGE_DISPATCH: dict[type, Callable[[Any, Any], LatticeValue]] = {
     CircularInterval: _merge_circular_intervals,
     OrderedInterval: _merge_ordered_intervals,
     DiscreteDomain: _merge_discrete_domains,
+    IntegerDomain: _merge_integer_domains,
     FlatValue: _merge_flat_values,
     SetLattice: _merge_set_lattices,
     MapLattice: _merge_map_lattices,

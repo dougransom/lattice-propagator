@@ -97,6 +97,10 @@ def generate_metadata_contents(repo_root: Path = REPO_ROOT) -> tuple[str, str]:
     license_str = project.get("license", {}).get("text", "MIT")
     keywords = project.get("keywords", [])
     raw_authors = project.get("authors", [])
+    urls = project.get("urls", {})
+    repo_url = urls.get("Repository", "https://github.com/dougransom/lattice-propagator")
+    docs_url = urls.get("Documentation", "https://dougransom.github.io/lattice-propagator/")
+    issues_url = urls.get("Issues", f"{repo_url}/issues")
 
     authors_cff: list[dict[str, str]] = []
     authors_codemeta: list[dict[str, str]] = []
@@ -125,16 +129,27 @@ def generate_metadata_contents(repo_root: Path = REPO_ROOT) -> tuple[str, str]:
             codemeta_entry["email"] = email
         authors_codemeta.append(codemeta_entry)
 
-    # 1. codemeta.json
+    # 1. codemeta.json (JSON-LD 1.1 / CodeMeta 3.0)
     codemeta_dict = {
-        "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
+        "@context": "https://w3id.org/codemeta/3.0",
         "@type": "SoftwareSourceCode",
         "identifier": name,
         "name": name,
         "version": version,
         "description": description,
         "license": f"https://spdx.org/licenses/{license_str}",
-        "codeRepository": "https://github.com/dougransom/lattice-propagator",
+        "url": docs_url,
+        "codeRepository": repo_url,
+        "issueTracker": issues_url,
+        "readme": f"{repo_url}/blob/main/README.md",
+        "softwareHelp": docs_url,
+        "applicationCategory": [
+            "Constraint Programming",
+            "Sensor Fusion",
+            "Scientific Computing",
+        ],
+        "developmentStatus": "active",
+        "operatingSystem": ["Linux", "macOS", "Windows"],
         "programmingLanguage": "Python",
         "runtimePlatform": "Python 3.11+",
         "author": authors_codemeta,
@@ -150,12 +165,14 @@ def generate_metadata_contents(repo_root: Path = REPO_ROOT) -> tuple[str, str]:
     today = datetime.date.today().isoformat()
     lines = [
         "cff-version: 1.2.0",
+        "type: software",
         'message: "If you use this software, please cite it as below."',
         f'title: "{name}"',
         f'version: "{version}"',
         f'date-released: "{today}"',
         f'abstract: "{description}"',
-        'repository-code: "https://github.com/dougransom/lattice-propagator"',
+        f'url: "{docs_url}"',
+        f'repository-code: "{repo_url}"',
         f'license: "{license_str}"',
         "authors:",
     ]
@@ -182,6 +199,25 @@ def generate_metadata_contents(repo_root: Path = REPO_ROOT) -> tuple[str, str]:
             '      name: "MIT CSAIL"',
             "    year: 2009",
             '    url: "https://dspace.mit.edu/handle/1721.1/44215"',
+            "  - type: thesis",
+            "    authors:",
+            '      - family-names: "Radul"',
+            '        given-names: "Alexey"',
+            '    title: "Propagation Networks: A Flexible and Expressive Substrate for Computation"',
+            "    institution:",
+            '      name: "Massachusetts Institute of Technology"',
+            "    year: 2009",
+            '    url: "https://dspace.mit.edu/handle/1721.1/54635"',
+            "  - type: book",
+            "    authors:",
+            '      - family-names: "Hanson"',
+            '        given-names: "Chris"',
+            '      - family-names: "Sussman"',
+            '        given-names: "Gerald Jay"',
+            '    title: "Software Design for Flexibility: How to Avoid Programming Yourself into a Corner"',
+            "    publisher:",
+            '      name: "MIT Press"',
+            "    year: 2021",
         ]
     )
     citation_content = "\n".join(lines) + "\n"

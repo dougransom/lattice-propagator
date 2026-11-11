@@ -19,9 +19,10 @@ The files in `docs/api/` serve a deliberate dual purpose:
 
 | Module | Description | Key Interfaces |
 | :--- | :--- | :--- |
-| **[`api/lattice.md`](lattice.md)** | Information semilattices and monotonic merge operations | `LatticeValue`, `Bottom`, `FlatValue`, `IntervalValue`, `GaussianValue`, `DiscreteDomain`, `SetLattice`, `MapLattice`, `Contradiction` |
+| **[`api/lattice.md`](lattice.md)** | Information semilattices and monotonic merge operations | `LatticeValue`, `Bottom`, `FlatValue`, `IntervalValue`, `GaussianValue`, `DiscreteDomain`, `IntegerDomain`, `SetLattice`, `MapLattice`, `Contradiction` |
 | **[`api/primitives.md`](primitives.md)** | Reactive containers and constraint operators | `Cell`, `Propagator`, `PropagatorNetwork`, `AdderPropagator`, `MultiplierPropagator`, `SwitchPropagator`, `MobileLinkPropagator`, `lift_propagator`, `FunctionalRelation` |
 | **[`api/boolean.md`](boolean.md)** | Multi-directional boolean logic gates & CNF constraints | `AndPropagator`, `OrPropagator`, `NotPropagator`, `XorPropagator`, `ClausePropagator` |
+| **[`api/clpz.md`](clpz.md)** | CLP(Z) unbounded integer constraints ($\mathbb{Z} \cup \{-\infty, +\infty\}$) & reification | `IntRelationPropagator`, `IntLinearPropagator`, `IntMulPropagator`, `IntAbsPropagator`, `ReifiedIntRelationPropagator`, `IntAllDifferentPropagator` |
 | **[`api/nonlinear.md`](nonlinear.md)** | Non-linear arithmetic and transcendental constraints | `PowerPropagator`, `SqrtPropagator`, `ExpPropagator`, `LogPropagator` |
 | **[`api/terms.md`](terms.md)** | First-order terms and unification constraints | `TermValue`, `PairPropagator`, `UnifyPropagator` |
 | **[`api/degenerate.md`](degenerate.md)** | Redundant multi-sensor estimation and fault isolation | `DegeneratePipeline`, `DegenerateBranch` |

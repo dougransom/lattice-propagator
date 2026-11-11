@@ -192,9 +192,7 @@ Instead, prefer **balanced binary reduction trees** using `tree_sum(cells)` or `
 from lattice_propagator import IntervalValue, PropagatorNetwork, tree_sum
 
 net = PropagatorNetwork()
-cells = [
-    net.add_cell(f"sensor_{i}", IntervalValue(10.0, 12.0)) for i in range(8)
-]
+cells = [net.add_cell(f"sensor_{i}", IntervalValue(10.0, 12.0)) for i in range(8)]
 
 # Constructs a balanced tree with depth log2(8) = 3:
 total = tree_sum(cells)

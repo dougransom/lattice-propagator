@@ -1,9 +1,11 @@
 cff-version: 1.2.0
+type: software
 message: "If you use this software, please cite it as below."
 title: "lattice-propagator"
 version: "0.0.1dev1"
 date-released: "2026-11-11"
 abstract: "Monotonic constraint networks and sensor fusion over partial-information lattices"
+url: "https://dougransom.github.io/lattice-propagator/"
 repository-code: "https://github.com/dougransom/lattice-propagator"
 license: "MIT"
 authors:
@@ -15,6 +17,16 @@ keywords:
   - "lattice"
   - "partial-information"
   - "constraints"
+  - "constraint-programming"
+  - "constraint-satisfaction"
+  - "csp"
+  - "clpz"
+  - "clpfd"
+  - "logic-programming"
+  - "sat-solver"
+  - "cdcl"
+  - "unification"
+  - "type-inference"
   - "sensor-fusion"
   - "home-assistant"
   - "sussman"
@@ -33,6 +45,9 @@ keywords:
   - "graphviz"
   - "reactive-programming"
   - "building-automation"
+  - "asyncio"
+  - "zero-dependencies"
+  - "pure-python"
 references:
   - type: report
     authors:
@@ -45,3 +60,22 @@ references:
       name: "MIT CSAIL"
     year: 2009
     url: "https://dspace.mit.edu/handle/1721.1/44215"
+  - type: thesis
+    authors:
+      - family-names: "Radul"
+        given-names: "Alexey"
+    title: "Propagation Networks: A Flexible and Expressive Substrate for Computation"
+    institution:
+      name: "Massachusetts Institute of Technology"
+    year: 2009
+    url: "https://dspace.mit.edu/handle/1721.1/54635"
+  - type: book
+    authors:
+      - family-names: "Hanson"
+        given-names: "Chris"
+      - family-names: "Sussman"
+        given-names: "Gerald Jay"
+    title: "Software Design for Flexibility: How to Avoid Programming Yourself into a Corner"
+    publisher:
+      name: "MIT Press"
+    year: 2021

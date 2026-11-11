@@ -75,7 +75,21 @@ envelope = room_temp.merge(target_temp)
 print(envelope)  # IntervalValue(20.0, 24.0)
 ```
 
-### 5. `SetLattice(elements)`
+### 5. `IntegerDomain(ranges)` ($\mathbb{Z} \cup \{-\infty, +\infty\}$)
+Represents a sorted union of disjoint closed integer intervals, modeled after Prolog `library(clpz)`. Unlike `DiscreteDomain` (which enumerates finite sets), `IntegerDomain` starts at `(-∞ .. +∞)` and narrows monotonically via interval intersection and gap removal (`without`).
+
+```python
+import math
+from lattice_propagator import IntegerDomain
+
+z = IntegerDomain.unbounded()  # (-∞ .. +∞)
+nonneg = IntegerDomain.at_least(0)  # [0 .. +∞)
+upper = IntegerDomain.between(-math.inf, 5)
+narrowed = z.merge(nonneg).merge(upper).without(3)
+print(narrowed)  # ℤ([0..2] ∪ [4..5])
+```
+
+### 6. `SetLattice(elements)`
 Monotonically accumulating set lattice under set union. Merging two sets combines their elements ($S_1 \cup S_2$).
 
 ```python
@@ -88,8 +102,8 @@ print(detected_tags.merge(new_scans))
 # SetLattice(frozenset({'device_1', 'device_2', 'device_3'}))
 ```
 
-### 6. `MapLattice(mapping)`
+### 7. `MapLattice(mapping)`
 A dictionary-like lattice that recursively merges overlapping keys using their respective lattice merge operators.
 
-### 7. `Contradiction` ($\top$)
+### 8. `Contradiction` ($\top$)
 The top element of the lattice. Represents a conflict between irreconcilable premises or disjoint intervals. Holds details of the conflict and supports Truth Maintenance tracking.

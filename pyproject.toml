@@ -19,6 +19,16 @@ keywords = [
     "lattice",
     "partial-information",
     "constraints",
+    "constraint-programming",
+    "constraint-satisfaction",
+    "csp",
+    "clpz",
+    "clpfd",
+    "logic-programming",
+    "sat-solver",
+    "cdcl",
+    "unification",
+    "type-inference",
     "sensor-fusion",
     "home-assistant",
     "sussman",
@@ -37,19 +47,34 @@ keywords = [
     "graphviz",
     "reactive-programming",
     "building-automation",
+    "asyncio",
+    "zero-dependencies",
+    "pure-python",
 ]
 
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Scientific/Engineering :: Mathematics",
     "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
 ]
+
+[project.urls]
+Homepage = "https://github.com/dougransom/lattice-propagator"
+Documentation = "https://dougransom.github.io/lattice-propagator/"
+Repository = "https://github.com/dougransom/lattice-propagator"
+Issues = "https://github.com/dougransom/lattice-propagator/issues"
 
 [project.scripts]
 lattice-dev = "lattice_propagator.dev_cli:main"

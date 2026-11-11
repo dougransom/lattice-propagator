@@ -133,7 +133,7 @@ net.add_propagator(
 
 # Solve using ChoiceEngine on primary decision variables
 engine = ChoiceEngine(net, variables=list(letter_cells.values()))
-solved = engine.solve()
+solved = engine.first_solution()
 assert solved, "Failed to solve cryptarithmetic puzzle!"
 
 # Render solution for LLMs & text inspection:
@@ -277,4 +277,46 @@ graph LR
     Col1 --> E & C2
     Col2 --> N & C3
     Col3 --> O & C4
+```
+
+---
+
+## 5. Direct CLP(Z) Linear Formulation (No Carry Decomposition Needed)
+
+Using [`lattice_propagator.clpz`](file:///home/doug/code/lattice-propagator/docs/api/clpz.md), the entire puzzle can also be expressed directly as a single multi-term integer linear equation over `IntegerDomain` cells—matching Prolog's `library(clpz)` idiom without writing custom `ColumnSumPropagator` classes:
+
+```python
+from lattice_propagator import (
+    ChoiceEngine,
+    PropagatorNetwork,
+    add_int_all_different,
+    add_int_linear,
+    add_int_rel,
+    int_cells,
+    int_expr,
+)
+
+clpz_net = PropagatorNetwork("SendMoreMoneyCLPZ")
+letters = int_cells(clpz_net, ["S", "E", "N", "D", "M", "O", "R", "Y"], lo=0, hi=9)
+s, e, n, d, m, o, r, y = letters
+
+add_int_rel(clpz_net, s, "#\\=", 0)
+add_int_rel(clpz_net, m, "#\\=", 0)
+add_int_all_different(clpz_net, letters)
+
+lhs = (
+    1000 * int_expr(s)
+    + 100 * int_expr(e)
+    + 10 * int_expr(n)
+    + int_expr(d)
+    + 1000 * int_expr(m)
+    + 100 * int_expr(o)
+    + 10 * int_expr(r)
+    + int_expr(e)
+)
+rhs = 10000 * int_expr(m) + 1000 * int_expr(o) + 100 * int_expr(n) + 10 * int_expr(e) + int_expr(y)
+add_int_linear(clpz_net, lhs - rhs, "#=", 0)
+
+assert ChoiceEngine(clpz_net, variables=letters).first_solution()
+print("CLP(Z) solution:", {c.cell_id: c.value.value for c in letters})
 ```

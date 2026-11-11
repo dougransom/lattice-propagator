@@ -83,7 +83,7 @@ def solve_n_queens(n: int = 8) -> list[int]:
 
     # 3. Interleaved propagation & MRV search
     engine = ChoiceEngine(net, variables=queens)
-    solved = engine.solve()
+    solved = engine.first_solution()
     assert solved, "No solution found!"
 
     # Export and persist network diagrams

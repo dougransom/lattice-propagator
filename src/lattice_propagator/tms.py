@@ -31,6 +31,7 @@ if __package__ is None or __package__ == "":
         DiscreteDomain,
         FlatValue,
         GaussianValue,
+        IntegerDomain,
         IntervalValue,
         LatticeValue,
         MapLattice,
@@ -45,6 +46,7 @@ else:
         DiscreteDomain,
         FlatValue,
         GaussianValue,
+        IntegerDomain,
         IntervalValue,
         LatticeValue,
         MapLattice,
@@ -232,6 +234,8 @@ def format_lattice_value(val: LatticeValue, unit: str = "", precision: int = 1) 
     if isinstance(val, DiscreteDomain):
         items = ", ".join(str(x) for x in sorted(val.candidates, key=str))
         return f"{{{items}}}"
+    if isinstance(val, IntegerDomain):
+        return val.format_display(unit=unit, precision=precision)
     if isinstance(val, FlatValue):
         return f"{val.val}{unit}"
     if isinstance(val, Contradiction):

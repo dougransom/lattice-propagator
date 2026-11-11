@@ -21,6 +21,7 @@ Core building blocks for composing autonomous propagator networks:
 
 from __future__ import annotations
 
+import itertools
 import math
 from abc import ABC, abstractmethod
 from collections import deque
@@ -40,6 +41,7 @@ from .lattice import (
     DiscreteDomain,
     FlatValue,
     GaussianValue,
+    IntegerDomain,
     IntervalValue,
     LatticeValue,
     MapLattice,
@@ -2767,199 +2769,6 @@ class AllDistinctPropagator(Propagator):
                 )
 
 
-class AllDistinctPropagator(Propagator):
-    """Enforces Generalized Arc Consistency (GAC) over DiscreteDomain cells via maximum bipartite matching.
-
-    Implements Régin's filtering algorithm for difference constraints (Régin 1994,
-    equivalent to Prolog CLP(Z) `all_distinct/1`):
-    1. Maximum Bipartite Matching: Matches variables (cells) to candidate values.
-       If any cell cannot be matched, detects a Hall Marriage Theorem violation
-       and immediately signals Contradiction (⊤).
-    2. Strongly Connected Components (SCC) & Alternating Paths: Finds all edges
-       participating in at least one maximum matching via Tarjan's SCC and BFS
-       from unmatched values.
-    3. Global Pruning (Naked Tuples): Automatically eliminates naked pairs, triples,
-       and k-tuples from non-participating peer cells prior to search branching,
-       substantially shrinking search tree depth compared to pairwise `AllDifferentPropagator`.
-
-    Theoretical Foundation:
-        - Régin, J.-C. (1994). "A filtering algorithm for constraints of difference in CSPs",
-          AAAI-94, pp. 362-367. https://cdn.aaai.org/AAAI/1994/AAAI94-055.pdf
-        - Triska, M. (2012). "The Boolean Constraint Solver of SWI-Prolog / CLP(FD) & CLP(Z)".
-    """
-
-    def __init__(
-        self,
-        name: str,
-        cells: Sequence[Cell],
-        confidence: float = 1.0,
-        is_assumption: bool = False,
-    ) -> None:
-        cells_list = list(cells)
-        super().__init__(
-            name,
-            cells_list,
-            cells_list,
-            confidence=confidence,
-            is_assumption=is_assumption,
-        )
-        self.cells = cells_list
-
-    def alert(self, network: PropagatorNetwork) -> None:
-        """Filter domains using Régin's GAC bipartite matching algorithm."""
-        domains: dict[Cell, frozenset[Any]] = {}
-        for c in self.cells:
-            val = c.value
-            if isinstance(val, Contradiction):
-                return
-            if isinstance(val, DiscreteDomain):
-                if not val.candidates:
-                    c.set_value(
-                        Contradiction(reason=f"Exhausted domain in {self.name}"),
-                        source=self.name,
-                    )
-                    return
-                domains[c] = val.candidates
-            elif isinstance(val, FlatValue):
-                domains[c] = frozenset([val.val])
-            elif isinstance(val, Bottom):
-                return
-
-        # Check duplicate determined values early
-        determined: dict[Any, Cell] = {}
-        for c, cands in domains.items():
-            if len(cands) == 1:
-                v = next(iter(cands))
-                if v in determined:
-                    c.set_value(
-                        Contradiction(
-                            reason=f"Duplicate value {v} in {self.name} between {determined[v].cell_id} and {c.cell_id}",
-                            conflicting_values=(determined[v].value, c.value),
-                        ),
-                        source=self.name,
-                    )
-                    return
-                determined[v] = c
-
-        # Maximum Bipartite Matching (Augmenting Paths)
-        cell_nodes = list(domains.keys())
-        match_left: dict[Cell, Any] = {}
-        match_right: dict[Any, Cell] = {}
-
-        def dfs(curr: Cell, visited: set[Any]) -> bool:
-            for v in domains[curr]:
-                if v not in visited:
-                    visited.add(v)
-                    if v not in match_right or dfs(match_right[v], visited):
-                        match_left[curr] = v
-                        match_right[v] = curr
-                        return True
-            return False
-
-        for u in cell_nodes:
-            visited: set[Any] = set()
-            if not dfs(u, visited):
-                # Hall's condition violated: cannot match all variables
-                u.set_value(
-                    Contradiction(
-                        reason=f"AllDistinct Hall condition violation in {self.name}: {len(cell_nodes)} cells cannot be assigned to distinct candidates",
-                    ),
-                    source=self.name,
-                )
-                return
-
-        # Build directed graph DG for alternating cycles and paths
-        all_values: set[Any] = set()
-        for d in domains.values():
-            all_values.update(d)
-
-        adj: dict[Any, list[Any]] = {c: [] for c in cell_nodes}
-        for v in all_values:
-            adj[v] = []
-
-        for c in cell_nodes:
-            mv = match_left[c]
-            adj[c].append(mv)
-            for v in domains[c]:
-                if v != mv:
-                    adj[v].append(c)
-
-        # Reachability from unmatched / free values (alternating paths)
-        free_values = [v for v in all_values if v not in match_right]
-        reachable_from_free: set[Any] = set(free_values)
-        queue = list(free_values)
-        while queue:
-            curr = queue.pop(0)
-            for neighbor in adj.get(curr, []):
-                if neighbor not in reachable_from_free:
-                    reachable_from_free.add(neighbor)
-                    queue.append(neighbor)
-
-        # Tarjan's Strongly Connected Components (alternating cycles)
-        idx = 0
-        indices: dict[Any, int] = {}
-        lowlink: dict[Any, int] = {}
-        on_stack: set[Any] = set()
-        stack: list[Any] = []
-        scc: dict[Any, int] = {}
-        scc_count = 0
-
-        def strongconnect(node: Any) -> None:
-            nonlocal idx, scc_count
-            indices[node] = idx
-            lowlink[node] = idx
-            idx += 1
-            stack.append(node)
-            on_stack.add(node)
-
-            for w in adj.get(node, []):
-                if w not in indices:
-                    strongconnect(w)
-                    lowlink[node] = min(lowlink[node], lowlink[w])
-                elif w in on_stack:
-                    lowlink[node] = min(lowlink[node], indices[w])
-
-            if lowlink[node] == indices[node]:
-                while True:
-                    w = stack.pop()
-                    on_stack.remove(w)
-                    scc[w] = scc_count
-                    if w == node:
-                        break
-                scc_count += 1
-
-        for n in list(adj.keys()):
-            if n not in indices:
-                strongconnect(n)
-
-        # Prune unsupported domain values
-        for c in cell_nodes:
-            curr_cands = domains[c]
-            if len(curr_cands) <= 1:
-                continue
-            mv = match_left[c]
-            valid_cands = set()
-            for v in curr_cands:
-                if (
-                    v == mv
-                    or (c in reachable_from_free and v in reachable_from_free)
-                    or scc.get(c) == scc.get(v)
-                ):
-                    valid_cands.add(v)
-
-            if len(valid_cands) < len(curr_cands):
-                if not valid_cands:
-                    c.set_value(
-                        Contradiction(reason=f"Exhausted domain during AllDistinct filtering in {self.name}"),
-                        source=self.name,
-                    )
-                    return
-                c.set_value(
-                    DiscreteDomain(candidates=frozenset(valid_cands)),
-                    source=self.name,
-                )
-
-
 class PropagatorNetwork:
     """Orchestrates cells and propagators, driving the network to fixed-point quiescence."""
 
@@ -3337,12 +3146,40 @@ class PropagatorNetwork:
 
 
 class ChoiceEngine:
-    """Interleaves monotonic lattice propagation with speculative branching and backtracking.
+    """External search driver that interleaves monotonic propagation with backtracking.
 
-    When constraint propagation reaches quiescence and discrete domain cells remain
-    undetermined (multiple candidates), ChoiceEngine uses the MRV (Minimum Remaining Values)
-    heuristic to select a choice point, branches on candidates, runs propagation to a fixed
-    point, and backtracks upon encountering a Contradiction.
+    Unlike a :class:`Propagator`, ``ChoiceEngine`` is **not** a node inside
+    the network: propagators must be strictly monotonic on the lattice and can
+    never retract information, whereas search (analogous to Prolog's
+    ``labeling/2``) is inherently non-monotonic. ``ChoiceEngine`` therefore
+    sits outside the :class:`PropagatorNetwork` and orchestrates chronological
+    backtracking around ``network.run()``:
+
+    1. Run ``network.run()`` until monotonic constraint propagation reaches
+       quiescence.
+    2. If ``DiscreteDomain`` or ``IntegerDomain`` cells remain undetermined,
+       select a choice point via the First-Fail / MRV (Minimum Remaining Values)
+       heuristic.
+    3. Snapshot all cell values in the network, inject a speculative branch
+       (via candidate enumeration for small finite domains, midpoint bisection
+       for large bounded ``IntegerDomain``, or windowed splitting for unbounded
+       ``IntegerDomain``), and re-run ``network.run()``.
+    4. Restore the snapshot and clear the worklist queue whenever any cell
+       reaches ``Contradiction``.
+
+    Contrast this with :class:`~lattice_propagator.tms.NetworkTMS`, which
+    supports dependency-directed backtracking via per-cell justifications and
+    learned nogoods rather than full-network state snapshots.
+
+    Args:
+        network: The :class:`PropagatorNetwork` to drive during search.
+        variables: Optional subset of decision :class:`Cell` instances to label
+            and check for completion. Defaults to all cells in ``network``.
+        max_depth: Maximum recursive branching depth before aborting a path.
+        split_threshold: Maximum bounded domain size for direct singleton
+            enumeration before switching to midpoint bisection.
+        unbounded_window: Half-width of the initial finite window tried when
+            splitting an unbounded ``IntegerDomain``.
     """
 
     def __init__(
@@ -3350,97 +3187,172 @@ class ChoiceEngine:
         network: PropagatorNetwork,
         variables: Sequence[Cell] | None = None,
         max_depth: int = 100,
+        split_threshold: int = 16,
+        unbounded_window: int = 16,
     ) -> None:
         self.network = network
         self.variables = list(variables) if variables is not None else None
         self.max_depth = max_depth
+        self.split_threshold = split_threshold
+        self.unbounded_window = unbounded_window
+
+    def _target_cells(self) -> list[Cell]:
+        return (
+            list(self.variables)
+            if self.variables is not None
+            else list(self.network.cells.values())
+        )
 
     def is_solved(self) -> bool:
         """Check if all cells in the network are non-bottom, determined, and contradiction-free."""
-        cells = self.variables if self.variables is not None else self.network.cells.values()
-        for cell in cells:
+        for cell in self._target_cells():
             val = cell.value
             if isinstance(val, (Bottom, Contradiction)):
                 return False
-            if isinstance(val, DiscreteDomain) and not val.is_determined:
+            if isinstance(val, (DiscreteDomain, IntegerDomain)) and not val.is_determined:
                 return False
         return True
 
     def find_branching_cell(self) -> Cell | None:
         """Find an undetermined cell using First-Fail / MRV (Minimum Remaining Values) heuristic."""
-        best_cell = None
-        min_candidates = float("inf")
-        cells = self.variables if self.variables is not None else self.network.cells.values()
-        for cell in cells:
+        best_cell: Cell | None = None
+        best_size: int | float = math.inf
+        for cell in self._target_cells():
             val = cell.value
-            if (
-                isinstance(val, DiscreteDomain)
-                and not val.is_determined
-                and 1 < len(val.candidates) < min_candidates
-            ):
-                min_candidates = len(val.candidates)
+            if isinstance(val, DiscreteDomain) and not val.is_determined:
+                size: int | float = len(val.candidates)
+            elif isinstance(val, IntegerDomain) and not val.is_determined:
+                size = val.size
+            else:
+                continue
+
+            if best_cell is None or size < best_size:
+                best_size = size
                 best_cell = cell
         return best_cell
 
-    def solve(self, max_iterations: int = 1000) -> bool:
-        """Execute depth-first search interleaved with fixed-point lattice relaxation.
+    def _branch_domains(self, domain: LatticeValue) -> list[LatticeValue]:
+        """Produce ordered speculative domain refinements for a choice point."""
+        if isinstance(domain, DiscreteDomain):
+            try:
+                candidates = sorted(domain.candidates)
+            except TypeError:
+                candidates = sorted(domain.candidates, key=lambda x: str(x))
+            return [DiscreteDomain.single(c) for c in candidates]
 
-        Returns True if a consistent fixed-point solution was found.
-        """
-        # Run initial propagation
-        self.network.run(max_iterations=max_iterations)
+        if not isinstance(domain, IntegerDomain):
+            return []
 
-        # Check for immediate contradiction
-        if any(isinstance(c.value, Contradiction) for c in self.network.cells.values()):
-            return False
-
-        if self.is_solved():
-            return True
-
-        return self._search_step(depth=0, max_iterations=max_iterations)
-
-    def _search_step(self, depth: int, max_iterations: int) -> bool:
-        if depth >= self.max_depth:
-            return False
-
-        cell = self.find_branching_cell()
-        if cell is None:
-            return self.is_solved()
-
-        domain = cell.value
-        assert isinstance(domain, DiscreteDomain)
-        try:
-            candidates = sorted(domain.candidates)
-        except TypeError:
-            candidates = sorted(domain.candidates, key=lambda x: str(x))
-
-        # Snapshot current network state
-        saved_state = {c.cell_id: c.value for c in self.network.cells.values()}
-
-        for cand in candidates:
-            # Restore state before trying candidate
-            self.network._queue.clear()
-            for cid, val in saved_state.items():
-                self.network.cells[cid].value = val
-
-            # Speculate: assert candidate
-            cell.set_value(DiscreteDomain.single(cand), overwrite=True)
-            self.network.run(max_iterations=max_iterations)
-
-            # If no contradiction, recurse
-            has_contradiction = any(
-                isinstance(c.value, Contradiction) for c in self.network.cells.values()
+        if domain.is_bounded:
+            if domain.size <= self.split_threshold:
+                return [IntegerDomain.single(v) for v in domain.iter_values()]
+            mid = (int(domain.lo) + int(domain.hi)) // 2
+            raw = (
+                domain.clamp(-math.inf, mid),
+                domain.clamp(mid + 1, math.inf),
             )
-            if not has_contradiction and (
-                self.is_solved() or self._search_step(depth + 1, max_iterations)
-            ):
-                return True
+            return [b for b in raw if isinstance(b, IntegerDomain)]
 
-        # Backtrack: restore saved state
+        w = self.unbounded_window
+        lo, hi = domain.lo, domain.hi
+        if lo == -math.inf and hi == math.inf:
+            raw_splits: tuple[LatticeValue, ...] = (
+                domain.clamp(0, w),
+                domain.clamp(-w, -1),
+                domain.clamp(w + 1, math.inf),
+                domain.clamp(-math.inf, -w - 1),
+            )
+        elif hi == math.inf:
+            cutoff = int(lo) + w
+            raw_splits = (domain.clamp(lo, cutoff), domain.clamp(cutoff + 1, math.inf))
+        else:
+            cutoff = int(hi) - w
+            raw_splits = (domain.clamp(cutoff, hi), domain.clamp(-math.inf, cutoff - 1))
+        return [b for b in raw_splits if isinstance(b, IntegerDomain)]
+
+    def _snapshot_solution(self) -> dict[str, LatticeValue]:
+        return {cell.cell_id: cell.value for cell in self._target_cells()}
+
+    def _restore_state(self, saved_state: dict[str, LatticeValue]) -> None:
         self.network._queue.clear()
         for cid, val in saved_state.items():
             self.network.cells[cid].value = val
-        return False
+
+    def iter_solutions(self, max_iterations: int = 1000) -> Iterator[dict[str, LatticeValue]]:
+        """Lazily yield all consistent solutions via depth-first backtracking.
+
+        Each yielded dictionary maps each target cell's ``cell_id`` to its
+        solved ``LatticeValue``. While suspended at each ``yield``,
+        ``network.cells`` remains populated with that solution; once iteration
+        exhausts all branches (or finds no solution), the pre-search network
+        state is restored.
+        """
+        initial_state = {c.cell_id: c.value for c in self.network.cells.values()}
+        self.network.run(max_iterations=max_iterations)
+
+        if any(isinstance(c.value, Contradiction) for c in self.network.cells.values()):
+            self._restore_state(initial_state)
+            return
+
+        if self.is_solved():
+            yield self._snapshot_solution()
+            self._restore_state(initial_state)
+            return
+
+        yield from self._iter_search_step(depth=0, max_iterations=max_iterations)
+        self._restore_state(initial_state)
+
+    def all_solutions(
+        self,
+        limit: int | None = None,
+        max_iterations: int = 1000,
+    ) -> list[dict[str, LatticeValue]]:
+        """Collect up to ``limit`` (or all) consistent solutions."""
+        solutions = self.iter_solutions(max_iterations=max_iterations)
+        if limit is not None:
+            solutions = itertools.islice(solutions, limit)
+        return list(solutions)
+
+    def first_solution(self, max_iterations: int = 1000) -> bool:
+        """Find the first consistent fixed-point solution in-place.
+
+        Returns True if a consistent fixed-point solution was found, leaving
+        ``network.cells`` populated with that assignment. Returns False (and
+        restores pre-search cell values) if no solution exists.
+        """
+        return next(self.iter_solutions(max_iterations=max_iterations), None) is not None
+
+    def _iter_search_step(
+        self, depth: int, max_iterations: int
+    ) -> Iterator[dict[str, LatticeValue]]:
+        if depth >= self.max_depth:
+            return
+
+        cell = self.find_branching_cell()
+        if cell is None:
+            if self.is_solved():
+                yield self._snapshot_solution()
+            return
+
+        branches = self._branch_domains(cell.value)
+        saved_state = {c.cell_id: c.value for c in self.network.cells.values()}
+
+        for branch in branches:
+            self._restore_state(saved_state)
+            cell.set_value(branch, overwrite=True)
+            self.network.run(max_iterations=max_iterations)
+
+            has_contradiction = any(
+                isinstance(c.value, Contradiction) for c in self.network.cells.values()
+            )
+            if has_contradiction:
+                continue
+            if self.is_solved():
+                yield self._snapshot_solution()
+            else:
+                yield from self._iter_search_step(depth + 1, max_iterations)
+
+        self._restore_state(saved_state)
 
 
 class CellDescriptor:
