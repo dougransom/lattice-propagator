@@ -20,7 +20,6 @@ Using the lattice propagator framework:
 
 ```python
 from lattice_propagator import (
-    AllDifferentPropagator,
     AllDistinctPropagator,
     Cell,
     ChoiceEngine,
@@ -114,7 +113,7 @@ print("  a b c d e f g h")
 
 ## 3. Constraint Network Visualization (4-Queens Topology)
 
-The $N$-Queens constraint network models files as discrete domain cells interconnected by a global row uniqueness constraint (`AllDifferentPropagator`) and pairwise diagonal non-attack propagators:
+The $N$-Queens constraint network models files as discrete domain cells interconnected by a global row uniqueness constraint (`AllDistinctPropagator`) and pairwise diagonal non-attack propagators:
 
 ```mermaid
 graph LR

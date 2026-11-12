@@ -49,15 +49,9 @@ graph TD
 ```python
 from lattice_propagator import (
     Bottom,
-    Cell,
-    Contradiction,
-    FlatValue,
-    PairPropagator,
     PropagatorNetwork,
     Term,
     TermValue,
-    UnifyPropagator,
-    add_pair_constraint,
     add_unify_constraint,
 )
 

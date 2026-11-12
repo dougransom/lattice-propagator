@@ -3,20 +3,20 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from typing import Any
 
-from lattice_propagator.degenerate import (
-    DegenerateBranch,
-    DegeneratePipeline,
-    add_degenerate_pipeline,
-)
-from lattice_propagator.lattice import (
+from lattice_propagator import (
     Bottom,
     Contradiction,
+    DegenerateBranch,
+    DegeneratePipeline,
     IntervalValue,
+    NetworkTMS,
+    PropagatorNetwork,
+    add_degenerate_pipeline,
+    lift_propagator,
 )
-from lattice_propagator.primitives import FunctionalPropagator, PropagatorNetwork
-from lattice_propagator.tms import NetworkTMS
 
 
 def test_degenerate_branch_creation() -> None:
@@ -236,36 +236,28 @@ def test_triangulation_with_degeneracy_scenarios() -> None:
         ble_y = net.add_cell("ble_y", unit="ft")
 
         # Multilateration baseline equations
-        def calc_x12(v1: IntervalValue, v2: IntervalValue) -> IntervalValue:
-            return (v1 * v1 - v2 * v2 + 900.0) / 60.0
+        def make_baseline(
+            span_sq: float, denom: float
+        ) -> Callable[[IntervalValue, IntervalValue], IntervalValue]:
+            return lambda va, vb: (va * va - vb * vb + span_sq) / denom
 
-        def calc_x34(v3: IntervalValue, v4: IntervalValue) -> IntervalValue:
-            return (v3 * v3 - v4 * v4 + 900.0) / 60.0
-
-        def calc_y13(v1: IntervalValue, v3: IntervalValue) -> IntervalValue:
-            return (v1 * v1 - v3 * v3 + 400.0) / 40.0
-
-        def calc_y24(v2: IntervalValue, v4: IntervalValue) -> IntervalValue:
-            return (v2 * v2 - v4 * v4 + 400.0) / 40.0
-
-        net.add_propagator(
-            FunctionalPropagator("prop_x12", calc_x12, [d1, d2], ble_x, overwrite=False)
-        )
-        net.add_propagator(
-            FunctionalPropagator("prop_x34", calc_x34, [d3, d4], ble_x, overwrite=False)
-        )
-        net.add_propagator(
-            FunctionalPropagator("prop_y13", calc_y13, [d1, d3], ble_y, overwrite=False)
-        )
-        net.add_propagator(
-            FunctionalPropagator("prop_y24", calc_y24, [d2, d4], ble_y, overwrite=False)
-        )
+        for prop_name, span_sq, denom, inputs, out_cell in (
+            ("prop_x12", 900.0, 60.0, [d1, d2], ble_x),
+            ("prop_x34", 900.0, 60.0, [d3, d4], ble_x),
+            ("prop_y13", 400.0, 40.0, [d1, d3], ble_y),
+            ("prop_y24", 400.0, 40.0, [d2, d4], ble_y),
+        ):
+            net.add_propagator(
+                lift_propagator(
+                    prop_name, make_baseline(span_sq, denom), inputs, out_cell, overwrite=False
+                )
+            )
 
         # Identity & Bay Gating
         gated_cam_x = net.add_cell("gated_cam_x", unit="ft")
         gated_cam_y = net.add_cell("gated_cam_y", unit="ft")
 
-        def gate_x(bx: Any, by: Any, cx: Any) -> Any:
+        def gate_bay2(bx: Any, by: Any, coord: Any) -> Any:
             if not (isinstance(bx, IntervalValue) and isinstance(by, IntervalValue)):
                 return Bottom()
             in_bay2 = (
@@ -274,29 +266,17 @@ def test_triangulation_with_degeneracy_scenarios() -> None:
                 and by.max_val >= 0.0
                 and by.min_val <= 20.0
             )
-            return cx if in_bay2 else Bottom()
+            return coord if in_bay2 else Bottom()
 
-        def gate_y(bx: Any, by: Any, cy: Any) -> Any:
-            if not (isinstance(bx, IntervalValue) and isinstance(by, IntervalValue)):
-                return Bottom()
-            in_bay2 = (
-                bx.max_val >= 10.0
-                and bx.min_val <= 20.0
-                and by.max_val >= 0.0
-                and by.min_val <= 20.0
+        for prop_name, raw_cell, gated_cell in (
+            ("gate_cam_x", raw_cam_x, gated_cam_x),
+            ("gate_cam_y", raw_cam_y, gated_cam_y),
+        ):
+            net.add_propagator(
+                lift_propagator(
+                    prop_name, gate_bay2, [ble_x, ble_y, raw_cell], gated_cell, overwrite=False
+                )
             )
-            return cy if in_bay2 else Bottom()
-
-        net.add_propagator(
-            FunctionalPropagator(
-                "gate_cam_x", gate_x, [ble_x, ble_y, raw_cam_x], gated_cam_x, overwrite=False
-            )
-        )
-        net.add_propagator(
-            FunctionalPropagator(
-                "gate_cam_y", gate_y, [ble_x, ble_y, raw_cam_y], gated_cam_y, overwrite=False
-            )
-        )
 
         target_x = net.add_cell("car_bumper_x", unit="ft")
         target_y = net.add_cell("car_bumper_y", unit="ft")

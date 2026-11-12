@@ -530,13 +530,7 @@ p_ac = IntervalValue(0.8, 1.2)
 p_dryer = IntervalValue(4.8, 5.2)
 
 uncontrollable = net.add_cell("uncontrollable_loads", unit="kW")
-uncontrollable.set_value(
-    IntervalValue(
-        p_base.min_val + p_ac.min_val + p_dryer.min_val,
-        p_base.max_val + p_ac.max_val + p_dryer.max_val,
-    ),
-    source="power_meter",
-)
+uncontrollable.set_value(p_base + p_ac + p_dryer, source="power_meter")
 
 # 4. Feeder headroom constraint: uncontrollable + headroom = service_limit
 headroom = net.add_cell("controllable_headroom", unit="kW")

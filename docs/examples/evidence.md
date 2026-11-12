@@ -73,12 +73,11 @@ graph TD
 ```python
 from lattice_propagator import (
     BeliefMassValue,
-    Cell,
     DempsterShaferPropagator,
     FlatValue,
-    FunctionalPropagator,
     PropagatorNetwork,
     SpatialZone,
+    lift_propagator,
 )
 
 # 1. Define the Frame of Discernment: Θ = {Bathroom, Kitchen, LivingRoom, Away}
@@ -149,13 +148,13 @@ def evaluate_living_kitchen_mode(mass: BeliefMassValue) -> FlatValue:
 
 
 net.add_propagator(
-    FunctionalPropagator("HomeDecision", evaluate_home_status, [cell_fused], cell_is_home)
+    lift_propagator("HomeDecision", evaluate_home_status, [cell_fused], cell_is_home)
 )
 net.add_propagator(
-    FunctionalPropagator("BathDecision", evaluate_bathroom_light, [cell_fused], cell_light_bath)
+    lift_propagator("BathDecision", evaluate_bathroom_light, [cell_fused], cell_light_bath)
 )
 net.add_propagator(
-    FunctionalPropagator(
+    lift_propagator(
         "LivingKitchenDecision",
         evaluate_living_kitchen_mode,
         [cell_fused],

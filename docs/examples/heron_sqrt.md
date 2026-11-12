@@ -27,15 +27,14 @@ The following code runs dynamically with full multi-step unrolling:
 ```python
 from lattice_propagator import (
     Cell,
-    FlatValue,
     PropagatorNetwork,
     delay_propagator,
 )
 
 net = PropagatorNetwork("HeronSquareRoot")
-x = net.add_cell("x", FlatValue(25.0))
-g0 = net.add_cell("g0", FlatValue(1.0))  # Initial seed guess
-sqrt_result = net.add_cell("sqrt_result")
+net.x = 25.0
+net.g0 = 1.0  # Initial seed guess
+sqrt_result = net.sqrt_result
 
 epsilon = 1e-5
 
@@ -46,19 +45,19 @@ def wire_heron_stage(
     guess_cell: Cell,
     stage_num: int,
 ) -> None:
-    val_x = getattr(radicand_cell.value, "val", None)
-    val_g = getattr(guess_cell.value, "val", None)
+    val_x = radicand_cell.val
+    val_g = guess_cell.val
     if val_x is None or val_g is None or val_g <= 0.0:
         return
 
     # Compute next approximation: g_next = 0.5 * (g + x / g)
     g_next_val = 0.5 * (val_g + val_x / val_g)
-    g_next_cell = stage_net.add_cell(f"g_{stage_num}", FlatValue(g_next_val))
+    g_next_cell = stage_net.add_cell(f"g_{stage_num}", g_next_val)
 
     # Check convergence: |g_next^2 - x| < epsilon
     if abs(g_next_val * g_next_val - val_x) < epsilon or stage_num >= 10:
         # Converged! Unify with target answer cell
-        stage_net.unify_cells(g_next_cell, sqrt_result)
+        sqrt_result << g_next_cell
     else:
         # Dynamically spawn the next iteration stage
         delay_propagator(
@@ -71,14 +70,14 @@ def wire_heron_stage(
 # Attach initial delayed stage
 delay_propagator(
     "delay_stage_1",
-    [x, g0],
+    [net.x, net.g0],
     builder=lambda net_sub, rx, rg: wire_heron_stage(net_sub, rx, rg, 1),
 )
 
 # Run worklist to fixed-point convergence
 net.run()
 
-ans = getattr(sqrt_result.value, "val", None)
+ans = sqrt_result.val
 print(f"√25.0 ≈ {ans:.6f}")
 assert abs(ans - 5.0) < epsilon
 ```

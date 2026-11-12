@@ -47,8 +47,6 @@ graph TD
 
 ```python
 from lattice_propagator import (
-    Bottom,
-    ClausePropagator,
     Contradiction,
     FlatValue,
     Literal,

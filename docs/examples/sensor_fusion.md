@@ -10,9 +10,8 @@ When two sensors observe the same physical quantity (e.g., room temperature from
 
 ```python
 from lattice_propagator import (
-    PropagatorNetwork,
     GaussianValue,
-    Cell,
+    PropagatorNetwork,
 )
 
 net = PropagatorNetwork("SensorFusion")
@@ -88,14 +87,6 @@ print(f"State after 2s: {state.value}")
 # Gaussian(μ=22.384, σ²=0.1919)
 print(f"Rate after 2s: {rate.value}")
 # Gaussian(μ=0.177, σ²=0.2255)
-
-# Export and persist network diagrams
-from pathlib import Path
-
-assets_dir = Path("docs/assets")
-if assets_dir.is_dir():
-    (assets_dir / "sensor_fusion_kalman.mmd").write_text(net.generate_mermaid(), encoding="utf-8")
-    (assets_dir / "sensor_fusion_kalman.dot").write_text(net.generate_dot(), encoding="utf-8")
 
 # Export and persist network diagrams
 from pathlib import Path

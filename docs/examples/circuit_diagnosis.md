@@ -30,10 +30,10 @@ from lattice_propagator import (
     Cell,
     Contradiction,
     FlatValue,
+    NetworkTMS,
     Propagator,
     PropagatorNetwork,
 )
-from lattice_propagator.tms import NetworkTMS
 
 
 class LogicGatePropagator(Propagator):

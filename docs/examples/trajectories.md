@@ -12,7 +12,6 @@ Consider an automated lighting curve that ramps up from $0\%$ to $100\%$ over $3
 
 ```python
 from lattice_propagator import (
-    Cell,
     FlatValue,
     IntervalValue,
     PropagatorNetwork,
@@ -126,9 +125,7 @@ Built-in normalized easing functions $p(u) \in [0, 1]$ where $u = \frac{\Delta t
 For specialized mathematical functions (e.g. sinusoidal breathing oscillations, psychrometric curves, or template-driven equations), `TrajectorySegment` accepts a `custom_eval` callable $f(u) \to \text{float}$ mapping normalized progress $u \in [0, 1]$ to an easing fraction:
 
 ```python
-import math
 from lattice_propagator import (
-    Cell,
     FlatValue,
     IntervalValue,
     PropagatorNetwork,
@@ -179,7 +176,6 @@ Because `TrajectoryEnvelopePropagator` outputs a standard `IntervalValue` on its
 ```python
 from lattice_propagator import (
     AdderPropagator,
-    Cell,
     FlatValue,
     IntervalValue,
     PropagatorNetwork,

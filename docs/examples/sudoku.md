@@ -110,12 +110,11 @@ In Gerald Jay Sussman and Alexey Radul's propagator formulation, backtracking is
 ```python
 from lattice_propagator import (
     AllDifferentPropagator,
-    Cell,
     Contradiction,
     DiscreteDomain,
+    NetworkTMS,
     PropagatorNetwork,
 )
-from lattice_propagator.tms import NetworkTMS
 
 net_ddb = PropagatorNetwork("SudokuDDB")
 grid_ddb = [[net_ddb.add_cell(f"R{r + 1}C{c + 1}") for c in range(9)] for r in range(9)]

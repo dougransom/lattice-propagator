@@ -83,18 +83,6 @@ if assets_dir.is_dir():
         net_fwd.generate_dot(), encoding="utf-8"
     )
 
-# Export and persist forward network diagrams
-from pathlib import Path
-
-assets_dir = Path("docs/assets")
-if assets_dir.is_dir():
-    (assets_dir / "resistor_network_forward.mmd").write_text(
-        net_fwd.generate_mermaid(), encoding="utf-8"
-    )
-    (assets_dir / "resistor_network_forward.dot").write_text(
-        net_fwd.generate_dot(), encoding="utf-8"
-    )
-
 # ==========================================
 # Phase 2: Reverse Inference (Given Vmid=4.0V, R1=100Ω -> deduce unknown R2 and I)
 # ==========================================
@@ -239,9 +227,7 @@ graph TD
 
 ```python
 from lattice_propagator import (
-    AdderPropagator,
     IntervalValue,
-    MultiplierPropagator,
     PropagatorNetwork,
 )
 
@@ -317,8 +303,6 @@ When calculating equivalent series resistance $R_{eq} = \sum_{i=1}^N R_i$ across
 
 ```python
 from lattice_propagator import (
-    Cell,
-    FlatValue,
     PropagatorNetwork,
     tree_sum,
 )
@@ -326,22 +310,22 @@ from lattice_propagator import (
 net_ladder = PropagatorNetwork("ResistorLadder")
 
 # 8 resistors in series: 100 Ω each
-resistors = [net_ladder.add_cell(f"R{i + 1}", FlatValue(100.0), unit="Ω") for i in range(8)]
+resistors = [net_ladder.add_cell(f"R{i + 1}", 100.0, unit="Ω") for i in range(8)]
 
 # Balanced O(log N) binary reduction tree:
 r_eq = tree_sum(resistors, net_ladder)
 net_ladder.run()
 
-print(f"Equivalent Series Resistance: {r_eq.value.val:.1f} Ω")
-assert r_eq.value.val == 800.0
+print(f"Equivalent Series Resistance: {r_eq.val:.1f} Ω")
+assert r_eq.val == 800.0
 
 # Backward deduction: if an unconstrained trim resistor is added and the total chain
 # is constrained to 1000 Ω, tree_sum deduces the required trim resistance backward:
 r_trim = net_ladder.add_cell("R_trim", unit="Ω")
 r_total = tree_sum([r_eq, r_trim], net_ladder)
-r_total.set_value(FlatValue(1000.0))
+r_total.value = 1000.0
 net_ladder.run()
 
-print(f"Trim Resistor Deduced: {r_trim.value.val:.1f} Ω")
-assert r_trim.value.val == 200.0
+print(f"Trim Resistor Deduced: {r_trim.val:.1f} Ω")
+assert r_trim.val == 200.0
 ```
